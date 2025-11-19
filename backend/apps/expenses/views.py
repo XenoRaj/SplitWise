@@ -21,14 +21,18 @@ class ExpenseListCreateView(generics.ListCreateAPIView):
         return ExpenseSerializer
     
     def get_queryset(self):
-        # Return expenses from groups where user is a member
+        user = self.request.user
+        
+        # Return expenses from groups where user is a member OR personal expenses
         user_groups = GroupMembership.objects.filter(
-            user=self.request.user, is_active=True
+            user=user, is_active=True
         ).values_list('group_id', flat=True)
         
         return Expense.objects.filter(
-            group_id__in=user_groups
-        ).order_by('-expense_date')
+            Q(group_id__in=user_groups) |  # Group expenses where user is member
+            Q(group__isnull=True, paid_by=user) |  # Personal expenses by user
+            Q(expense_splits__user=user)  # Expenses where user is involved in splits
+        ).distinct().order_by('-expense_date')
 
 
 class ExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -36,11 +40,16 @@ class ExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
+        user = self.request.user
         user_groups = GroupMembership.objects.filter(
-            user=self.request.user, is_active=True
+            user=user, is_active=True
         ).values_list('group_id', flat=True)
         
-        return Expense.objects.filter(group_id__in=user_groups)
+        return Expense.objects.filter(
+            Q(group_id__in=user_groups) |  # Group expenses where user is member
+            Q(group__isnull=True, paid_by=user) |  # Personal expenses by user  
+            Q(expense_splits__user=user)  # Expenses where user is involved in splits
+        ).distinct()
 
 
 class SettlementListCreateView(generics.ListCreateAPIView):

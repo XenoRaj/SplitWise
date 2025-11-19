@@ -25,11 +25,13 @@ class Expense(models.Model):
         related_name='expenses_paid'
     )
     
-    # Which group this expense belongs to
+    # Which group this expense belongs to (optional)
     group = models.ForeignKey(
         'groups.Group', 
         on_delete=models.CASCADE, 
-        related_name='expenses'
+        related_name='expenses',
+        null=True,
+        blank=True
     )
     
     # How to split the expense

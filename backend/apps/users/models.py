@@ -35,6 +35,29 @@ class CustomUser(AbstractUser):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
+    
+    def get_balance_summary(self):
+        """Calculate user's balance from expenses"""
+        from django.db.models import Sum
+        from apps.expenses.models import ExpenseSplit, Settlement, Expense
+        
+        # Amount user owes to others (splits where they are assigned)
+        # For now, let's not worry about settlements since we don't have that logic yet
+        owed_to_others = self.expense_splits.aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Amount others owe to user (from expenses they paid, minus their own split)
+        owed_by_others = 0
+        user_paid_expenses = Expense.objects.filter(paid_by=self)
+        for expense in user_paid_expenses:
+            # Sum of all splits except user's own split
+            total_splits = expense.expense_splits.exclude(user=self).aggregate(total=Sum('amount'))['total'] or 0
+            owed_by_others += total_splits
+        
+        return {
+            'owed_to_others': float(owed_to_others),
+            'owed_by_others': float(owed_by_others),
+            'net_balance': float(owed_by_others - owed_to_others)
+        }
 
 
 class OTP(models.Model):

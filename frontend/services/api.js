@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { simpleAuthStorage } from './simpleAuthStorage';
+import { authStorage } from './authStorage';
 
 // Base URL for Django backend - using 10.0.2.2 for Android emulator
 const BASE_URL = 'http://10.0.2.2:8000/api';
@@ -16,9 +16,12 @@ const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   async (config) => {
-    const token = await simpleAuthStorage.getAccessToken();
+    const token = await authStorage.getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('Adding auth token to request:', config.url);
+    } else {
+      console.log('No auth token found for request:', config.url);
     }
     return config;
   },
@@ -40,14 +43,14 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       
       try {
-        const refreshToken = await simpleAuthStorage.getRefreshToken();
+        const refreshToken = await authStorage.getRefreshToken();
         if (refreshToken) {
           const response = await axios.post(`${BASE_URL}/auth/refresh/`, {
             refresh: refreshToken,
           });
           
           const newToken = response.data.access;
-          await simpleAuthStorage.storeAuthData({ access: newToken });
+          await authStorage.storeAuthData({ access: newToken });
           
           // Retry original request with new token
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
@@ -55,7 +58,7 @@ api.interceptors.response.use(
         }
       } catch (refreshError) {
         // Refresh failed, clear auth data
-        await simpleAuthStorage.clearAuthData();
+        await authStorage.clearAuthData();
         console.log('Token refresh failed, user logged out');
       }
     }
@@ -149,7 +152,7 @@ export const apiService = {
   // Logout function
   logout: async () => {
     try {
-      const refreshToken = await simpleAuthStorage.getRefreshToken();
+      const refreshToken = await authStorage.getRefreshToken();
       if (refreshToken) {
         // Try to invalidate refresh token on server
         await api.post('/auth/logout/', { refresh: refreshToken });
@@ -158,19 +161,19 @@ export const apiService = {
       console.log('Logout API call failed (probably OK):', error.message);
     } finally {
       // Always clear local storage
-      await simpleAuthStorage.clearAuthData();
+      await authStorage.clearAuthData();
       console.log('User logged out successfully');
     }
   },
 
   // Check authentication status
   isAuthenticated: async () => {
-    return await simpleAuthStorage.isLoggedIn();
+    return await authStorage.isLoggedIn();
   },
 
   // Get current user data
   getCurrentUser: async () => {
-    return await simpleAuthStorage.getUserData();
+    return await authStorage.getUserData();
   },
 
   // Verify 2FA OTP
@@ -195,6 +198,34 @@ export const apiService = {
     }
   },
 
+  // Get current user profile
+  getUserProfile: async () => {
+    try {
+      const response = await api.get('/auth/profile/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get user profile failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get user profile' 
+      };
+    }
+  },
+
+  // Get dashboard data (user + expenses summary)
+  getDashboardData: async () => {
+    try {
+      const response = await api.get('/auth/dashboard/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get dashboard data failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get dashboard data' 
+      };
+    }
+  },
+
   // Resend OTP code
   resendOTP: async (email) => {
     try {
@@ -212,6 +243,112 @@ export const apiService = {
       return { 
         success: false, 
         error: error.response?.data?.error || error.message || 'Failed to resend OTP' 
+      };
+    }
+  },
+
+  // ===== EXPENSES API =====
+
+  // Create new expense
+  createExpense: async (expenseData) => {
+    try {
+      const response = await api.post('/expenses/', expenseData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Create expense failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to create expense' 
+      };
+    }
+  },
+
+  // Get all expenses for user
+  getExpenses: async () => {
+    try {
+      const response = await api.get('/expenses/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get expenses failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get expenses' 
+      };
+    }
+  },
+
+  // Get single expense by ID
+  getExpense: async (expenseId) => {
+    try {
+      const response = await api.get(`/expenses/${expenseId}/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get expense failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get expense' 
+      };
+    }
+  },
+
+  // ===== GROUPS API =====
+
+  // Get all groups for user
+  getGroups: async () => {
+    try {
+      const response = await api.get('/groups/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get groups failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get groups' 
+      };
+    }
+  },
+
+  // Get group members
+  getGroupMembers: async (groupId) => {
+    try {
+      const response = await api.get(`/groups/${groupId}/members/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get group members failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get group members' 
+      };
+    }
+  },
+
+  // Get all users for expense splitting
+  getUsers: async () => {
+    try {
+      const response = await api.get('/auth/users/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get users failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get users' 
+      };
+    }
+  },
+
+  // Create expense
+  createExpense: async (expenseData) => {
+    try {
+      const response = await api.post('/expenses/', expenseData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Create expense failed:', error);
+      console.error('Error response data:', error.response?.data);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || 
+               JSON.stringify(error.response?.data) || 
+               error.message || 
+               'Failed to create expense' 
       };
     }
   },

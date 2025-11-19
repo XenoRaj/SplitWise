@@ -55,6 +55,13 @@ export function TwoFactorScreen({ navigation, login, showLoading }: TwoFactorScr
       
       // Store tokens and user data
       await authStorage.storeAuthData(verifyResult.data);
+      console.log('Auth data stored, checking if saved...');
+      
+      // Verify data was stored
+      const storedToken = await authStorage.getAccessToken();
+      const storedUser = await authStorage.getUserData();
+      console.log('Stored token:', storedToken ? 'Present' : 'Missing');
+      console.log('Stored user:', storedUser ? storedUser.email : 'Missing');
       
       // Clear the pending email
       await authStorage.clearUserEmail();

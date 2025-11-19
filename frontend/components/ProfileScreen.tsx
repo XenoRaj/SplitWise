@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { Button, Card, Avatar, Switch } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { Home, Users, ChevronRight, Shield, Bell, CreditCard, HelpCircle, LogOut, Settings, Lock, Smartphone } from 'lucide-react-native';
+import { apiService } from '../services/api';
 import type { User } from '../App';
 
 type RootStackParamList = {
@@ -28,28 +29,125 @@ interface ProfileScreenProps {
 }
 
 export function ProfileScreen({ navigation, user, logout, showLoading }: ProfileScreenProps) {
+  const [profileData, setProfileData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [notifications, setNotifications] = useState(true);
-  const [twoFactor, setTwoFactor] = useState(user?.twoFactorEnabled || false);
+  const [twoFactor, setTwoFactor] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
-  if (!user) return null;
+  useEffect(() => {
+    fetchProfileData();
+  }, []);
 
-  const handleLogout = () => {
-    showLoading(() => {
+  const fetchProfileData = async () => {
+    try {
+      setLoading(true);
+      console.log('Fetching profile data...');
+      
+      // Check if user is authenticated first
+      const isAuth = await apiService.isAuthenticated();
+      console.log('Is authenticated:', isAuth);
+      
+      if (!isAuth) {
+        console.log('User not authenticated, cannot fetch profile data');
+        setError('Authentication required. Please log in again.');
+        return;
+      }
+      
+      const result = await apiService.getUserProfile();
+      console.log('Profile data result:', result);
+      
+      if (result.success) {
+        setProfileData(result.data);
+        setTwoFactor(result.data.two_factor_enabled || false);
+        setError('');
+      } else {
+        setError(result.error);
+        console.error('Profile data fetch failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Profile data fetch exception:', error);
+      setError('Failed to load profile data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      console.log('Logging out...');
+      await apiService.logout();
       logout();
-      navigation.navigate('login');
-    });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'welcome' }],
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still log out locally even if API call fails
+      logout();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'welcome' }],
+      });
+    }
   };
 
-  const handleToggle2FA = () => {
-    showLoading(() => {
+  const handleToggle2FA = async () => {
+    if (updating) return;
+    
+    try {
+      setUpdating(true);
+      // Note: This would need a backend API endpoint to update 2FA settings
+      // For now, just show the toggle effect
       setTwoFactor(!twoFactor);
+      
       navigation.navigate('success', { 
-        message: twoFactor 
-          ? 'Two-factor authentication disabled' 
-          : 'Two-factor authentication enabled successfully!'
+        message: !twoFactor 
+          ? 'Two-factor authentication enabled successfully!' 
+          : 'Two-factor authentication disabled'
       });
-    });
+    } catch (error) {
+      console.error('2FA toggle error:', error);
+      setError('Failed to update 2FA settings');
+    } finally {
+      setUpdating(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading your profile...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Error: {error}</Text>
+          <Button mode="contained" onPress={fetchProfileData} style={styles.retryButton}>
+            Retry
+          </Button>
+        </View>
+      </View>
+    );
+  }
+
+  if (!profileData) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>No profile data available</Text>
+        </View>
+      </View>
+    );
+  }
 
   const settingsItems = [
     {
@@ -105,14 +203,30 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
         {/* User Profile */}
         <Card style={styles.profileCard}>
           <Card.Content style={styles.profileContent}>
-            <Avatar.Image size={80} source={{ uri: user.avatar }} style={styles.avatar} />
-            <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userEmail}>{user.email}</Text>
+            <Avatar.Text 
+              size={80} 
+              label={profileData.first_name ? profileData.first_name.charAt(0).toUpperCase() : profileData.email.charAt(0).toUpperCase()}
+              style={styles.avatar}
+            />
+            <Text style={styles.userName}>
+              {profileData.first_name && profileData.last_name 
+                ? `${profileData.first_name} ${profileData.last_name}`
+                : profileData.first_name || profileData.email.split('@')[0]
+              }
+            </Text>
+            <Text style={styles.userEmail}>{profileData.email}</Text>
             
             {/* Account Status */}
             <View style={styles.accountStatus}>
               <Shield size={16} color="#16a34a" />
               <Text style={styles.verifiedText}>Verified Account</Text>
+              {profileData.two_factor_enabled && (
+                <>
+                  <View style={styles.statusSeparator} />
+                  <Smartphone size={16} color="#3b82f6" />
+                  <Text style={styles.twoFactorText}>2FA Enabled</Text>
+                </>
+              )}
             </View>
             
             <Button mode="outlined" style={styles.editButton}>
@@ -131,17 +245,17 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
             <View style={styles.balanceGrid}>
               <View style={styles.balanceItem}>
                 <Text style={styles.balanceLabel}>You owe</Text>
-                <Text style={styles.balanceValueRed}>$42.50</Text>
+                <Text style={styles.balanceValueRed}>${profileData?.owes || '0.00'}</Text>
               </View>
               <View style={styles.balanceItem}>
                 <Text style={styles.balanceLabel}>You're owed</Text>
-                <Text style={styles.balanceValueGreen}>$28.75</Text>
+                <Text style={styles.balanceValueGreen}>${profileData?.owed || '0.00'}</Text>
               </View>
             </View>
             <View style={styles.netBalance}>
               <Text style={styles.netLabel}>Net Balance</Text>
-              <Text style={[styles.netValue, { color: user.balance < 0 ? '#dc2626' : '#16a34a' }]}>
-                ${Math.abs(user.balance).toFixed(2)} {user.balance < 0 ? 'owed' : 'owing'}
+              <Text style={[styles.netValue, { color: profileData?.balance && profileData.balance < 0 ? '#dc2626' : '#16a34a' }]}>
+                ${profileData?.balance ? Math.abs(profileData.balance).toFixed(2) : '0.00'} {profileData?.balance && profileData.balance < 0 ? 'owed' : 'owing'}
               </Text>
             </View>
           </Card.Content>
@@ -280,6 +394,8 @@ const styles = StyleSheet.create({
   badgeTextEnabled: { color: '#166534' },
   badgeTextDisabled: { color: '#dc2626' },
   settingSubtitle: { fontSize: 14, color: '#6b7280' },
+  statusSeparator: { marginHorizontal: 8, color: '#9ca3af' },
+  twoFactorText: { fontSize: 12, color: '#10b981', fontWeight: '500' },
   settingRight: { marginLeft: 12 },
   securityCard: { marginBottom: 16, elevation: 2 },
   securityContent: { padding: 16 },
@@ -288,6 +404,33 @@ const styles = StyleSheet.create({
   logoutContent: { padding: 16 },
   logoutButton: { borderColor: '#dc2626' },
   buttonContent: { height: 48 },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6'
+  },
+  loadingText: { 
+    marginTop: 16, 
+    fontSize: 16, 
+    color: '#6b7280' 
+  },
+  errorContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 24,
+    backgroundColor: '#f3f4f6'
+  },
+  errorText: { 
+    fontSize: 16, 
+    color: '#dc2626', 
+    textAlign: 'center',
+    marginBottom: 16
+  },
+  retryButton: { 
+    backgroundColor: '#3b82f6' 
+  },
   bottomNav: { flexDirection: 'row', backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingHorizontal: 24, paddingVertical: 12 },
   navItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   navItemActive: { flex: 1, alignItems: 'center', paddingVertical: 8 },

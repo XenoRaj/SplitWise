@@ -2,6 +2,7 @@ from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .models import CustomUser, OTP
@@ -109,6 +110,69 @@ class ProfileView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+    def get(self, request, *args, **kwargs):
+        user = self.get_object()
+        user_data = UserSerializer(user).data
+        
+        # Get real balance data
+        balance_data = user.get_balance_summary()
+        
+        # Add balance information with real calculations
+        profile_data = {
+            **user_data,
+            'balance': balance_data['net_balance'],    # Net balance (positive = you're owed, negative = you owe)
+            'owes': balance_data['owed_to_others'],    # Amount you owe to others  
+            'owed': balance_data['owed_by_others'],    # Amount others owe to you
+            'stats': {
+                'total_expenses': 0,  # TODO: Calculate from actual expenses
+                'groups_count': 0,    # TODO: Calculate from actual group memberships
+            }
+        }
+        
+        return Response(profile_data)
+
+
+class DashboardView(generics.RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        
+        # Get user data
+        user_data = UserSerializer(user).data
+        
+        # Get real balance data
+        balance_data = user.get_balance_summary()
+        
+        # Get expense and group counts
+        from apps.expenses.models import Expense
+        from apps.groups.models import Group
+        from django.db.models import Q
+        
+        # Count expenses where user is involved (either paid by user or user has splits)
+        total_expenses = Expense.objects.filter(
+            Q(paid_by=user) | Q(expense_splits__user=user)
+        ).distinct().count()
+        
+        # Count groups where user is a member
+        total_groups = Group.objects.filter(members=user).count()
+        
+        # Build dashboard data with real calculations
+        dashboard_data = {
+            'user': user_data,
+            'stats': {
+                'total_expenses': total_expenses,
+                'total_owed': balance_data['owed_to_others'],    # Amount user owes to others
+                'total_owing': balance_data['owed_by_others'],   # Amount others owe to user
+                'net_balance': balance_data['net_balance'],      # Net balance
+                'groups_count': total_groups,
+            },
+            'recent_expenses': [],  # TODO: Add recent expenses query
+            'recent_groups': [],    # TODO: Add recent groups query
+        }
+        
+        return Response(dashboard_data)
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -207,3 +271,40 @@ def resend_otp(request):
     return Response({
         'message': 'New verification code sent to your email'
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    """
+    Logout user by blacklisting their refresh token
+    """
+    try:
+        refresh_token = request.data.get('refresh_token')
+        if refresh_token:
+            # Blacklist the refresh token
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        
+        return Response({
+            'message': 'Successfully logged out'
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'error': 'Failed to logout'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UsersListView(APIView):
+    """
+    Get list of all users for expense splitting
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            users = CustomUser.objects.all()
+            serializer = UserSerializer(users, many=True)
+            return Response(serializer.data, status=200)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)

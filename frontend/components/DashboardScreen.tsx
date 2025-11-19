@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { Button, Card, Avatar, Chip } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { Plus, Users, CreditCard, Home, ArrowUpRight, ArrowDownLeft } from 'lucide-react-native';
+import { apiService } from '../services/api';
 import type { User, Expense } from '../App';
 
 type RootStackParamList = {
@@ -27,25 +28,124 @@ interface DashboardScreenProps {
 }
 
 export function DashboardScreen({ navigation, user, expenses }: DashboardScreenProps) {
-  if (!user) return null;
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const recentExpenses = expenses.slice(0, 3);
-  const totalOwed = expenses
-    .filter(e => !e.settled && e.paidBy !== user.name)
-    .reduce((sum, e) => sum + (e.amount / e.splitWith.length), 0);
+  // Early return if user is null (logged out)
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ textAlign: 'center', marginTop: 50 }}>Please log in to view your dashboard</Text>
+      </View>
+    );
+  }
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      console.log('Fetching dashboard data...');
+      
+      // Check if user is authenticated first
+      const isAuth = await apiService.isAuthenticated();
+      console.log('Is authenticated:', isAuth);
+      
+      if (!isAuth) {
+        console.log('User not authenticated, cannot fetch dashboard data');
+        setError('Authentication required. Please log in again.');
+        return;
+      }
+      
+      const result = await apiService.getDashboardData();
+      console.log('Setting dashboard data:', result.data);
+      console.log('User data in response:', result.data.user);
+      console.log('Dashboard data result:', result);
+        
+      if (result.success) {
+        console.log('Setting dashboard data:', result.data);
+        console.log('User data in response:', result.data.user);
+        setDashboardData(result.data);
+        setError('');
+      } else {
+        setError(result.error);
+        console.error('Dashboard data fetch failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Dashboard data fetch exception:', error);
+      setError('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading your dashboard...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Error: {error}</Text>
+          <Button mode="contained" onPress={fetchDashboardData} style={styles.retryButton}>
+            Retry
+          </Button>
+        </View>
+      </View>
+    );
+  }
+
+  if (!dashboardData || !dashboardData.user) {
+    console.log('Dashboard data check failed:', { dashboardData, hasUser: !!dashboardData?.user });
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>No user data available</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const userData = dashboardData.user;
+  const stats = dashboardData.stats;
+  const recentExpenses = dashboardData.recent_expenses || [];
   
-  const totalOwing = expenses
-    .filter(e => !e.settled && e.paidBy === user.name && e.splitWith.length > 1)
-    .reduce((sum, e) => sum + (e.amount - (e.amount / e.splitWith.length)), 0);
+  // Use real data from backend
+  const totalOwed = stats.total_owed;
+  const totalOwing = stats.total_owing;
+  const netBalance = stats.net_balance;
+  
+  console.log('Dashboard balance values:', {
+    totalOwed,
+    totalOwing,
+    netBalance,
+    stats
+  });
 
   return (
     <View style={styles.container}>      
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.userInfo}>
-          <Avatar.Image size={48} source={{ uri: user.avatar }} />
+          <Avatar.Text 
+            size={48} 
+            label={userData.first_name ? userData.first_name.charAt(0).toUpperCase() : userData.email.charAt(0).toUpperCase()}
+            style={styles.avatar}
+          />
           <View style={styles.userText}>
-            <Text style={styles.greeting}>Welcome back, {user.name.split(' ')[0]}</Text>
+            <Text style={styles.greeting}>
+              Welcome back, {userData.first_name || userData.email.split('@')[0]}
+            </Text>
             <Text style={styles.subtitle}>Let's split some bills!</Text>
           </View>
         </View>
@@ -83,8 +183,8 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
             </View>
             <View style={styles.netBalance}>
               <Text style={styles.netLabel}>Net Balance</Text>
-              <Text style={[styles.netAmount, { color: user.balance < 0 ? '#dc2626' : '#16a34a' }]}>
-                ${Math.abs(user.balance).toFixed(2)} {user.balance < 0 ? 'owed' : 'owing'}
+              <Text style={[styles.netAmount, { color: netBalance < 0 ? '#dc2626' : '#16a34a' }]}>
+                ${Math.abs(parseFloat(netBalance.toFixed(2)))} {netBalance < 0 ? 'owed' : 'owing'}
               </Text>
             </View>
           </Card.Content>
@@ -248,4 +348,11 @@ const styles = StyleSheet.create({
   navItemActive: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   navText: { fontSize: 12, color: '#6b7280', marginTop: 4 },
   navTextActive: { fontSize: 12, color: '#3b82f6', marginTop: 4 },
+  // New styles for loading, error, and real user data
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  loadingText: { fontSize: 16, color: '#6b7280', marginTop: 16 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  errorText: { fontSize: 16, color: '#dc2626', marginBottom: 16, textAlign: 'center' },
+  retryButton: { backgroundColor: '#3b82f6' },
+  avatar: { backgroundColor: '#3b82f6' },
 });

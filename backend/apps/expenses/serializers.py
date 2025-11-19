@@ -11,6 +11,9 @@ class ExpenseSplitSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExpenseSplit
         fields = ('id', 'user', 'user_id', 'amount', 'percentage')
+        extra_kwargs = {
+            'percentage': {'required': False, 'allow_null': True}
+        }
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
@@ -27,7 +30,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
 
 class ExpenseCreateSerializer(serializers.ModelSerializer):
-    group_id = serializers.IntegerField(write_only=True)
+    group_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     splits = ExpenseSplitSerializer(many=True, write_only=True, required=False)
     
     class Meta:
@@ -36,6 +39,9 @@ class ExpenseCreateSerializer(serializers.ModelSerializer):
                  'split_type', 'receipt_image', 'expense_date', 'splits')
 
     def validate_group_id(self, value):
+        if value is None:
+            return None
+            
         from apps.groups.models import Group, GroupMembership
         request = self.context.get('request')
         
@@ -52,11 +58,17 @@ class ExpenseCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         splits_data = validated_data.pop('splits', [])
-        group_id = validated_data.pop('group_id')
+        group_id = validated_data.pop('group_id', None)
         request = self.context.get('request')
         
-        from apps.groups.models import Group
-        group = Group.objects.get(id=group_id)
+        print(f"Creating expense with data: {validated_data}")
+        print(f"Splits data: {splits_data}")
+        print(f"Group ID: {group_id}")
+        
+        group = None
+        if group_id:
+            from apps.groups.models import Group
+            group = Group.objects.get(id=group_id)
         
         expense = Expense.objects.create(
             paid_by=request.user,
@@ -67,8 +79,9 @@ class ExpenseCreateSerializer(serializers.ModelSerializer):
         # Create splits
         if splits_data:
             for split_data in splits_data:
+                print(f"Creating split: {split_data}")
                 ExpenseSplit.objects.create(expense=expense, **split_data)
-        elif validated_data.get('split_type') == 'equal':
+        elif group and validated_data.get('split_type') == 'equal':
             # Create equal splits for all group members
             from apps.groups.models import GroupMembership
             members = GroupMembership.objects.filter(group=group, is_active=True)
