@@ -9,4 +9,5 @@ urlpatterns = [
     path('profile/', views.ProfileView.as_view(), name='profile'),
     path('password-reset/', views.password_reset_request, name='password_reset'),
     path('verify-2fa/', views.verify_two_factor, name='verify_2fa'),
+    path('resend-otp/', views.resend_otp, name='resend_otp'),
 ]

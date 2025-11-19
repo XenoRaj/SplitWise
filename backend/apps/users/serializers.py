@@ -9,7 +9,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ('email', 'username', 'first_name', 'last_name', 
+        fields = ('email', 'first_name', 'last_name', 
                  'phone_number', 'password', 'password_confirm')
 
     def validate(self, attrs):
@@ -20,6 +20,19 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
+        
+        # Generate username from email if not provided
+        email = validated_data.get('email')
+        username = email.split('@')[0] if email else ''
+        
+        # Ensure username is unique
+        base_username = username
+        counter = 1
+        while CustomUser.objects.filter(username=username).exists():
+            username = f"{base_username}{counter}"
+            counter += 1
+        
+        validated_data['username'] = username
         user = CustomUser.objects.create_user(password=password, **validated_data)
         return user
 

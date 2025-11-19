@@ -1,5 +1,12 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+import random
+import string
+from datetime import datetime, timedelta
+from django.utils import timezone
+from django.utils import timezone
+import random
+import string
 
 
 class CustomUser(AbstractUser):
@@ -9,6 +16,7 @@ class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     profile_picture = models.URLField(blank=True, null=True)
+    two_factor_enabled = models.BooleanField(default=True)  # Enable 2FA by default
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -27,3 +35,96 @@ class CustomUser(AbstractUser):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
+
+
+class OTP(models.Model):
+    """
+    Model to store OTP codes for two-factor authentication
+    """
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='otps')
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = 'user_otps'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"OTP {self.code} for {self.user.email}"
+    
+    @classmethod
+    def generate_for_user(cls, user):
+        """Generate a new OTP for the user"""
+        # Deactivate any existing unused OTPs
+        cls.objects.filter(user=user, is_used=False).update(is_used=True)
+        
+        # Generate 6-digit OTP
+        code = ''.join(random.choices(string.digits, k=6))
+        
+        # Set expiration to 10 minutes from now
+        expires_at = timezone.now() + timedelta(minutes=10)
+        
+        return cls.objects.create(
+            user=user,
+            code=code,
+            expires_at=expires_at
+        )
+    
+    def is_valid(self):
+        """Check if OTP is still valid"""
+        return not self.is_used and self.expires_at > timezone.now()
+    
+    def mark_as_used(self):
+        """Mark OTP as used"""
+        self.is_used = True
+        self.save()
+
+
+class OTPToken(models.Model):
+    """
+    Model to store OTP tokens for 2FA verification
+    """
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    otp_code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = 'otp_tokens'
+        verbose_name = 'OTP Token'
+        verbose_name_plural = 'OTP Tokens'
+    
+    def is_expired(self):
+        """Check if OTP has expired (valid for 5 minutes)"""
+        return timezone.now() > self.expires_at
+    
+    def is_valid(self):
+        """Check if OTP is valid (not expired and not used)"""
+        return not self.is_expired() and not self.is_used
+    
+    @classmethod
+    def generate_otp(cls, user):
+        """Generate a new 6-digit OTP for user"""
+        # Clear any existing unused OTPs for this user
+        cls.objects.filter(user=user, is_used=False).delete()
+        
+        # Generate random 6-digit OTP
+        otp_code = ''.join(random.choices(string.digits, k=6))
+        
+        # Set expiration time (5 minutes from now)
+        expires_at = timezone.now() + timezone.timedelta(minutes=5)
+        
+        # Create new OTP record
+        otp_token = cls.objects.create(
+            user=user,
+            otp_code=otp_code,
+            expires_at=expires_at
+        )
+        
+        return otp_token
+    
+    def __str__(self):
+        return f"OTP {self.otp_code} for {self.user.email}"
