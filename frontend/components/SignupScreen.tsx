@@ -4,8 +4,11 @@ import { Button, ProgressBar } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { ArrowLeft, Shield, Eye, EyeOff, Check, X } from 'lucide-react-native';
+import { apiService } from '../services/api';
+import { authStorage } from '../services/authStorage';
 
 type RootStackParamList = {
+  'two-factor': undefined;
   signup: undefined;
   welcome: undefined;
   login: undefined;
@@ -19,10 +22,11 @@ type SignupScreenRouteProp = RouteProp<RootStackParamList, 'signup'>;
 interface SignupScreenProps {
   navigation: SignupScreenNavigationProp;
   route: SignupScreenRouteProp;
+  login: () => void;
   showLoading: (callback: () => void) => void;
 }
 
-export function SignupScreen({ navigation, showLoading }: SignupScreenProps) {
+export function SignupScreen({ navigation, login, showLoading }: SignupScreenProps) {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -59,9 +63,10 @@ export function SignupScreen({ navigation, showLoading }: SignupScreenProps) {
     return 'Strong';
   };
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     const { firstName, lastName, email, password, confirmPassword } = formData;
 
+    // Validation
     if (!firstName || !lastName || !email || !password || !confirmPassword) {
       setError('Please fill in all fields');
       return;
@@ -83,9 +88,57 @@ export function SignupScreen({ navigation, showLoading }: SignupScreenProps) {
     }
 
     setError('');
-    showLoading(() => {
-      navigation.navigate('success', { message: 'Account created successfully! Please check your email to verify your account.' });
-    });
+    
+    try {
+      console.log('Starting registration process...');
+      
+      // Prepare user data for API
+      const userData = {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
+        password: password,
+        confirmPassword: confirmPassword,
+      };
+
+      // Call registration API
+      const registrationResult = await apiService.register(userData);
+      console.log('Registration result:', registrationResult);
+
+      if (registrationResult.success) {
+        console.log('Registration successful:', registrationResult.data);
+        
+        // Check if 2FA is required (should be for all new users)
+        if (registrationResult.data.requires_2fa && registrationResult.data.email) {
+          console.log('2FA required for new user, storing email and navigating to 2FA');
+          
+          // Store email for 2FA verification
+          await authStorage.storeUserEmail(registrationResult.data.email);
+          
+          // Navigate to 2FA screen
+          navigation.navigate('two-factor');
+        } else if (registrationResult.data.access && registrationResult.data.refresh) {
+          // Fallback: Auto-login if tokens provided (shouldn't happen with 2FA default)
+          await authStorage.storeAuthData(registrationResult.data);
+          login();
+          navigation.navigate('success', { 
+            message: 'Account created successfully! Welcome to SplitWise!' 
+          });
+        } else {
+          // Registration successful but something unexpected happened
+          navigation.navigate('success', { 
+            message: registrationResult.data.message || 'Account created successfully! Please log in to continue.' 
+          });
+        }
+      } else {
+        // Registration failed
+        setError(registrationResult.error);
+        console.error('Registration error:', registrationResult.error);
+      }
+    } catch (error) {
+      console.error('Registration exception:', error);
+      setError('An unexpected error occurred. Please try again.');
+    }
   };
 
   const updateFormData = (field: string, value: string) => {
@@ -241,7 +294,7 @@ export function SignupScreen({ navigation, showLoading }: SignupScreenProps) {
         {/* Security Notice */}
         <View style={styles.securityNotice}>
           <Shield size={16} color="#16a34a" />
-          <Text style={styles.securityText}>Your data is encrypted and secure</Text>
+          <Text style={styles.securityText}>Two-factor authentication will be enabled by default for enhanced security</Text>
         </View>
       </View>
 

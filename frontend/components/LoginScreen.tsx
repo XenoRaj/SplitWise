@@ -4,13 +4,16 @@ import { Button } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { ArrowLeft, Shield, Eye, EyeOff, Lock } from 'lucide-react-native';
+import { apiService } from '../services/api';
+import { authStorage } from '../services/authStorage';
 
 type RootStackParamList = {
   login: undefined;
   welcome: undefined;
   signup: undefined;
   passwordReset: undefined;
-  twoFactor: undefined;
+  'two-factor': undefined;
+  dashboard: undefined;
   // Add other screens...
 };
 
@@ -30,7 +33,7 @@ export function LoginScreen({ navigation, login, showLoading }: LoginScreenProps
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email || !password) {
       setError('Please fill in all fields');
       return;
@@ -47,9 +50,50 @@ export function LoginScreen({ navigation, login, showLoading }: LoginScreenProps
     }
 
     setError('');
-    showLoading(() => {
-      navigation.navigate('two-factor');
-    });
+    
+    // Test API connection first
+    console.log('Testing API connection...');
+    const connectionTest = await apiService.testConnection();
+    console.log('Connection test result:', connectionTest);
+    
+    if (!connectionTest.success) {
+      setError('Cannot connect to server. Please check your connection.');
+      return;
+    }
+    
+    // Try real login
+    console.log('Attempting login...');
+    const loginResult = await apiService.login(email, password);
+    console.log('Login result:', loginResult);
+    
+    if (loginResult.success) {
+      // Check if 2FA is required
+      if (loginResult.data.requires_2fa) {
+        console.log('2FA required - storing email and navigating to 2FA screen');
+        // Store email temporarily for 2FA verification
+        await authStorage.storeUserEmail(loginResult.data.email);
+        // Navigate to 2FA screen instead of dashboard
+        navigation.navigate('two-factor');
+        return;
+      }
+      
+      // Login successful without 2FA - store auth data
+      console.log('Authentication successful:', loginResult.data);
+      
+      // Store tokens and user data
+      await authStorage.storeAuthData(loginResult.data);
+      
+      // Call parent login function to update app state
+      login();
+      
+      // Navigate to dashboard
+      navigation.navigate('dashboard');
+      
+      // Clear any previous errors
+      setError('');
+    } else {
+      setError(loginResult.error);
+    }
   };
 
   return (

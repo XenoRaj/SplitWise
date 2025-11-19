@@ -39,7 +39,7 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
     .reduce((sum, e) => sum + (e.amount - (e.amount / e.splitWith.length)), 0);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container}>      
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.userInfo}>

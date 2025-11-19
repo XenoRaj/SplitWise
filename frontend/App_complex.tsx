@@ -1,26 +1,10 @@
 import React, { useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
 import { Provider as PaperProvider } from 'react-native-paper';
-import { WelcomeScreen } from './components/WelcomeScreen';
-import { LoginScreen } from './components/LoginScreen';
-import { SignupScreen } from './components/SignupScreen';
-import { PasswordResetScreen } from './components/PasswordResetScreen';
-import { TwoFactorScreen } from './components/TwoFactorScreen';
-import { DashboardScreen } from './components/DashboardScreen';
-import { AddExpenseScreen } from './components/AddExpenseScreen';
-import { ExpenseDetailsScreen } from './components/ExpenseDetailsScreen';
-import { GroupsScreen } from './components/GroupsScreen';
-import { GroupDetailsScreen } from './components/GroupDetailsScreen';
-import { ExpenseCreatorScreen } from './components/ExpenseCreatorScreen';
-import { VerificationCompletedScreen } from './components/VerificationCompletedScreen';
-import { VerificationRejectedScreen } from './components/VerificationRejectedScreen';
-import { VerificationPendingScreen } from './components/VerificationPendingScreen';
-import { SettlePaymentScreen } from './components/SettlePaymentScreen';
-import { ProfileScreen } from './components/ProfileScreen';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthNavigator } from './navigation/AuthNavigator';
+import { MainNavigator } from './navigation/MainNavigator';
 import { LoadingScreen } from './components/LoadingScreen';
-import { SuccessScreen } from './components/SuccessScreen';
-import { ErrorScreen } from './components/ErrorScreen';
 
 export type Screen =
   | "welcome"
@@ -91,10 +75,18 @@ export interface Group {
   expenses: GroupExpense[];
 }
 
-const Stack = createStackNavigator();
-
-export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+// Main App Navigator that uses auth context
+function AppNavigator() {
+  const { isAuthenticated, isLoading, user } = useAuth();
+  
+  // Debug logging
+  console.log('AppNavigator render - Auth State:', {
+    isAuthenticated,
+    isLoading,
+    hasUser: !!user,
+    userEmail: user?.email
+  });
+  
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
@@ -234,23 +226,12 @@ export default function App() {
     },
   ];
 
-  const login = () => {
-    setUser(mockUser);
-  };
-
-  const logout = () => {
-    setUser(null);
-  };
-
   const showLoading = (callback: () => void, duration: number = 2000) => {
-    // In RN, you might use a modal or loading state
     setTimeout(callback, duration);
   };
 
   const commonProps = {
-    user,
-    login,
-    logout,
+    user: user || mockUser, // Use real user data when available, fallback to mock
     showLoading,
     expenses: mockExpenses,
     groups: mockGroups,
@@ -260,72 +241,26 @@ export default function App() {
     errorMessage,
   };
 
+  // Show loading screen while checking auth status
+  if (isLoading) {
+    return <LoadingScreen {...commonProps} />;
+  }
+
+  // Render appropriate navigator based on auth state
+  return isAuthenticated ? 
+    <MainNavigator {...commonProps} /> : 
+    <AuthNavigator {...commonProps} />;
+}
+
+// Main App component with providers
+export default function App() {
   return (
     <PaperProvider>
-      <NavigationContainer>
-        <Stack.Navigator
-          initialRouteName="welcome"
-          screenOptions={{ headerShown: false }}
-        >
-          <Stack.Screen name="welcome">
-            {(props) => <WelcomeScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="login">
-            {(props) => <LoginScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="signup">
-            {(props) => <SignupScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="password-reset">
-            {(props) => <PasswordResetScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="two-factor">
-            {(props) => <TwoFactorScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="dashboard">
-            {(props) => <DashboardScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="add-expense">
-            {(props) => <AddExpenseScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="expense-details">
-            {(props) => <ExpenseDetailsScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="groups">
-            {(props) => <GroupsScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="group-details">
-            {(props) => <GroupDetailsScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="expense-creator">
-            {(props) => <ExpenseCreatorScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="verification-completed">
-            {(props) => <VerificationCompletedScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="verification-rejected">
-            {(props) => <VerificationRejectedScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="verification-pending">
-            {(props) => <VerificationPendingScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="settle-payment">
-            {(props) => <SettlePaymentScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="profile">
-            {(props) => <ProfileScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="loading">
-            {(props) => <LoadingScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="success">
-            {(props) => <SuccessScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-          <Stack.Screen name="error">
-            {(props) => <ErrorScreen {...props} {...commonProps} />}
-          </Stack.Screen>
-        </Stack.Navigator>
-      </NavigationContainer>
+      <AuthProvider>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </AuthProvider>
     </PaperProvider>
   );
 }

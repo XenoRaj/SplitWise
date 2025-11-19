@@ -4,6 +4,8 @@ import { Button } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { ArrowLeft, Shield, Smartphone } from 'lucide-react-native';
+import { apiService } from '../services/api';
+import { authStorage } from '../services/authStorage';
 
 type RootStackParamList = {
   'two-factor': undefined;
@@ -27,31 +29,67 @@ export function TwoFactorScreen({ navigation, login, showLoading }: TwoFactorScr
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
 
-  const handleVerifyCode = () => {
+  const handleVerifyCode = async () => {
     if (code.length !== 6) {
       setError('Please enter the complete 6-digit code');
       return;
     }
 
-    if (code !== '123456') { // Mock verification
-      setError('Invalid verification code. Please try again.');
+    setError('');
+    
+    // Get the stored email for 2FA verification
+    const email = await authStorage.getUserEmail();
+    if (!email) {
+      setError('Missing email for verification. Please try logging in again.');
+      return;
+    }
+    
+    // Call the real 2FA verification API
+    console.log('Verifying 2FA code:', code, 'for email:', email);
+    const verifyResult = await apiService.verify2FA(code, email);
+    console.log('2FA verification result:', verifyResult);
+    
+    if (verifyResult.success) {
+      // 2FA verification successful - store auth data
+      console.log('2FA verification successful:', verifyResult.data);
+      
+      // Store tokens and user data
+      await authStorage.storeAuthData(verifyResult.data);
+      
+      // Clear the pending email
+      await authStorage.clearUserEmail();
+      
+      // Call parent login function to update app state
+      login();
+      
+      // Navigate to dashboard
+      navigation.navigate('dashboard');
+    } else {
+      setError(verifyResult.error);
+    }
+  };
+
+  const handleResendCode = async () => {
+    const email = await authStorage.getUserEmail();
+    if (!email) {
+      setError('Missing email for resending code. Please try logging in again.');
       return;
     }
 
-    setError('');
-    // On successful verification, log in the user and navigate to dashboard
-    showLoading(() => {
-      login();
-      navigation.navigate('dashboard');
-    });
-  };
-
-  const handleResendCode = () => {
-    showLoading(() => {
+    console.log('Resending OTP to:', email);
+    const resendResult = await apiService.resendOTP(email);
+    console.log('Resend OTP result:', resendResult);
+    
+    if (resendResult.success) {
+      // Clear any previous errors
+      setError('');
+      // Show success message or navigate to success screen
       navigation.navigate('success', { 
-        message: 'A new verification code has been sent to your device.' 
+        message: resendResult.data.message || 'A new verification code has been sent to your email.' 
       });
-    });
+    } else {
+      setError(resendResult.error);
+    }
   };
 
   return (
@@ -76,7 +114,7 @@ export function TwoFactorScreen({ navigation, login, showLoading }: TwoFactorScr
           </View>
           <Text style={styles.title}>Two-Factor Authentication</Text>
           <Text style={styles.subtitle}>
-            Enter the 6-digit verification code from your authenticator app to complete sign in.
+            Enter the 6-digit verification code sent to your email to complete sign in.
           </Text>
         </View>
 
@@ -123,10 +161,10 @@ export function TwoFactorScreen({ navigation, login, showLoading }: TwoFactorScr
           </Text>
         </View>
 
-        {/* Demo Code Notice */}
+        {/* Demo Code Notice - Remove this in production */}
         <View style={styles.demoNotice}>
           <Text style={styles.demoText}>
-            Demo: Use code <Text style={styles.demoCode}>123456</Text> to continue
+            Development: Check Django console for the OTP code, or use <Text style={styles.demoCode}>123456</Text> for testing
           </Text>
         </View>
       </View>
