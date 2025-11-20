@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Button, Card, Avatar, Switch } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
@@ -61,6 +61,8 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
       if (result.success) {
         setProfileData(result.data);
         setTwoFactor(result.data.two_factor_enabled || false);
+        console.log('Profile data loaded:', result.data);
+        console.log('2FA status:', result.data.two_factor_enabled);
         setError('');
       } else {
         setError(result.error);
@@ -81,7 +83,7 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
       logout();
       navigation.reset({
         index: 0,
-        routes: [{ name: 'welcome' }],
+        routes: [{ name: 'login' }],
       });
     } catch (error) {
       console.error('Logout error:', error);
@@ -89,7 +91,7 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
       logout();
       navigation.reset({
         index: 0,
-        routes: [{ name: 'welcome' }],
+        routes: [{ name: 'login' }],
       });
     }
   };
@@ -99,18 +101,41 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
     
     try {
       setUpdating(true);
-      // Note: This would need a backend API endpoint to update 2FA settings
-      // For now, just show the toggle effect
-      setTwoFactor(!twoFactor);
+      const newState = !twoFactor;
       
-      navigation.navigate('success', { 
-        message: !twoFactor 
-          ? 'Two-factor authentication enabled successfully!' 
-          : 'Two-factor authentication disabled'
-      });
+      console.log(`Toggling 2FA to: ${newState}`);
+      const result = await apiService.toggle2FA(newState);
+      
+      if (result.success) {
+        setTwoFactor(newState);
+        // Update profile data to reflect the change
+        if (profileData) {
+          setProfileData({
+            ...profileData,
+            two_factor_enabled: newState
+          });
+        }
+        
+        navigation.navigate('success', { 
+          message: newState 
+            ? 'Two-factor authentication enabled successfully!' 
+            : 'Two-factor authentication disabled successfully!'
+        });
+      } else {
+        console.error('2FA toggle failed:', result.error);
+        Alert.alert(
+          'Error',
+          result.error || 'Failed to update 2FA settings',
+          [{ text: 'OK' }]
+        );
+      }
     } catch (error) {
       console.error('2FA toggle error:', error);
-      setError('Failed to update 2FA settings');
+      Alert.alert(
+        'Error',
+        'Failed to update 2FA settings. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setUpdating(false);
     }
@@ -294,6 +319,7 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
                     <Switch
                       value={item.toggle}
                       onValueChange={item.onToggle}
+                      disabled={item.title === 'Two-Factor Authentication' && updating}
                       color="#3b82f6"
                     />
                   ) : (

@@ -321,7 +321,7 @@ export const apiService = {
     }
   },
 
-  // Get all users for expense splitting
+  // Get users list
   getUsers: async () => {
     try {
       const response = await api.get('/auth/users/');
@@ -330,7 +330,23 @@ export const apiService = {
       console.error('Get users failed:', error);
       return { 
         success: false, 
-        error: error.response?.data?.detail || error.message || 'Failed to get users' 
+        error: error.response?.data?.detail || error.message || 'Failed to fetch users' 
+      };
+    }
+  },
+
+  // Toggle 2FA
+  toggle2FA: async (enabled) => {
+    try {
+      const response = await api.patch('/auth/profile/', {
+        two_factor_enabled: enabled
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Toggle 2FA failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to update 2FA settings' 
       };
     }
   },
