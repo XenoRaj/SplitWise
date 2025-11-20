@@ -5,6 +5,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from django.utils import timezone
+from datetime import timedelta
+import random
 from .models import CustomUser, OTP
 from .serializers import UserRegistrationSerializer, UserSerializer, LoginSerializer
 from .services import EmailService
@@ -191,6 +194,11 @@ class DashboardView(generics.RetrieveAPIView):
         return Response(dashboard_data)
 
 
+def generate_otp():
+    """Generate a 6-digit OTP"""
+    return str(random.randint(100000, 999999))
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def password_reset_request(request):
@@ -200,10 +208,90 @@ def password_reset_request(request):
     
     try:
         user = CustomUser.objects.get(email=email)
-        # In a real app, you'd send an email with reset link
-        return Response({'message': 'Password reset link sent to your email'})
+        # Generate OTP for password reset
+        otp_code = generate_otp()
+        
+        # Delete any existing OTPs for this user to avoid conflicts
+        OTP.objects.filter(user=user).delete()
+        
+        # Create new OTP
+        otp_obj = OTP.objects.create(
+            user=user,
+            code=otp_code,
+            expires_at=timezone.now() + timedelta(minutes=10)
+        )
+        
+        # In a real app, you'd send this OTP via email
+        # For now, we'll log it for testing purposes
+        print(f"Password Reset OTP for {email}: {otp_code}")
+        
+        return Response({'message': 'Password reset OTP sent to your email'})
     except CustomUser.DoesNotExist:
         return Response({'error': 'User with this email does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_password_reset_otp(request):
+    email = request.data.get('email')
+    otp = request.data.get('otp')
+    
+    if not email or not otp:
+        return Response({'error': 'Email and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user = CustomUser.objects.get(email=email)
+        otp_obj = OTP.objects.get(user=user, code=otp)
+        
+        # Check if OTP is still valid (within 10 minutes)
+        if timezone.now() - otp_obj.created_at > timedelta(minutes=10):
+            otp_obj.delete()
+            return Response({'error': 'OTP has expired'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # OTP is valid - return success
+        return Response({'message': 'OTP verified successfully', 'email': email})
+        
+    except (CustomUser.DoesNotExist, OTP.DoesNotExist):
+        return Response({'error': 'Invalid OTP or email'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password(request):
+    email = request.data.get('email')
+    otp = request.data.get('otp')
+    new_password = request.data.get('new_password')
+    confirm_password = request.data.get('confirm_password')
+    
+    if not all([email, otp, new_password, confirm_password]):
+        return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if new_password != confirm_password:
+        return Response({'error': 'Passwords do not match'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if len(new_password) < 6:
+        return Response({'error': 'Password must be at least 6 characters long'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user = CustomUser.objects.get(email=email)
+        otp_obj = OTP.objects.get(user=user, code=otp)
+        
+        # Check if OTP is still valid (within 10 minutes)
+        if timezone.now() - otp_obj.created_at > timedelta(minutes=10):
+            otp_obj.delete()
+            return Response({'error': 'OTP has expired'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update password
+        user.set_password(new_password)
+        user.save()
+        
+        # Delete the used OTP
+        otp_obj.delete()
+        
+        return Response({'message': 'Password reset successfully'})
+        
+    except (CustomUser.DoesNotExist, OTP.DoesNotExist):
+        return Response({'error': 'Invalid OTP or email'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])

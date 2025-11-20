@@ -11,7 +11,7 @@ type RootStackParamList = {
   login: undefined;
   welcome: undefined;
   signup: undefined;
-  passwordReset: undefined;
+  'password-reset': undefined;
   'two-factor': undefined;
   dashboard: undefined;
   // Add other screens...
@@ -92,7 +92,9 @@ export function LoginScreen({ navigation, login, showLoading }: LoginScreenProps
       // Clear any previous errors
       setError('');
     } else {
-      setError(loginResult.error);
+      // Use the specific error message from the backend if available
+      const errorMessage = loginResult.error?.detail || loginResult.error || 'Login failed. Please check your credentials.';
+      setError(errorMessage);
     }
   };
 
@@ -157,7 +159,7 @@ export function LoginScreen({ navigation, login, showLoading }: LoginScreenProps
           </View>
         </View>
 
-        <TouchableOpacity style={styles.forgotPassword} onPress={() => navigation.navigate('passwordReset')}>
+        <TouchableOpacity style={styles.forgotPassword} onPress={() => navigation.navigate('password-reset')}>
           <Text style={styles.forgotPasswordText}>Forgot password?</Text>
         </TouchableOpacity>
 
