@@ -9,6 +9,7 @@ import { PasswordResetScreen } from './components/PasswordResetScreen';
 import { TwoFactorScreen } from './components/TwoFactorScreen';
 import { DashboardScreen } from './components/DashboardScreen';
 import { AddExpenseScreen } from './components/AddExpenseScreen';
+import { AllExpensesScreen } from './components/AllExpensesScreen';
 import { ExpenseDetailsScreen } from './components/ExpenseDetailsScreen';
 import { GroupsScreen } from './components/GroupsScreen';
 import { GroupDetailsScreen } from './components/GroupDetailsScreen';
@@ -31,6 +32,7 @@ export type Screen =
   | "two-factor"
   | "dashboard"
   | "add-expense"
+  | "all-expenses"
   | "expense-details"
   | "groups"
   | "group-details"
@@ -279,6 +281,9 @@ export default function App() {
               console.log('App.tsx Stack.Screen - route params:', props.route.params);
               return <AddExpenseScreen {...props} {...commonProps} />
             }}
+          </Stack.Screen>
+          <Stack.Screen name="all-expenses">
+            {(props) => <AllExpensesScreen {...props} {...commonProps} />}
           </Stack.Screen>
           <Stack.Screen name="expense-details">
             {(props) => <ExpenseDetailsScreen {...props} {...commonProps} />}

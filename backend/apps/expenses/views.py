@@ -32,7 +32,7 @@ class ExpenseListCreateView(generics.ListCreateAPIView):
             Q(group_id__in=user_groups) |  # Group expenses where user is member
             Q(group__isnull=True, paid_by=user) |  # Personal expenses by user
             Q(expense_splits__user=user)  # Expenses where user is involved in splits
-        ).distinct().order_by('-expense_date')
+        ).distinct().order_by('-created_at')
 
 
 class ExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -81,7 +81,7 @@ def user_dashboard_summary(request):
         Q(group_id__in=user_groups) |  # Group expenses where user is member
         Q(group__isnull=True, paid_by=user) |  # Personal expenses paid by user
         Q(expense_splits__user=user)  # Any expenses where user has splits
-    ).distinct().order_by('-expense_date')[:5]
+    ).distinct().order_by('-created_at')[:5]
     
     # Calculate what user owes (expenses paid by others where user has a split)
     user_owes = ExpenseSplit.objects.filter(
@@ -132,7 +132,7 @@ def group_expenses(request, group_id):
             status=status.HTTP_403_FORBIDDEN
         )
     
-    expenses = Expense.objects.filter(group_id=group_id).order_by('-expense_date')
+    expenses = Expense.objects.filter(group_id=group_id).order_by('-created_at')
     print(f"Found {expenses.count()} expenses for group {group_id}")
     for expense in expenses:
         print(f"- Expense: {expense.title}, Amount: {expense.amount}, Group ID: {expense.group_id}")

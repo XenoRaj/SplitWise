@@ -48,13 +48,12 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
   }, []);
 
   useEffect(() => {
-    if (searchQuery.trim() === '') {
-      // Show all users except current user when no search query
-      setFilteredUsers(users.filter(user => user.id !== currentUser?.id));
-    } else {
-      const filtered = users.filter(user => {
-        if (user.id === currentUser?.id) return false; // Exclude current user
-        
+    // Always exclude current user from selectable list
+    let filtered = users.filter(user => user.id !== currentUser?.id);
+    
+    // Apply search filter if there's a search query
+    if (searchQuery.trim() !== '') {
+      filtered = filtered.filter(user => {
         const fullName = user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim();
         const email = user.email || '';
         
@@ -63,15 +62,18 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
           email.toLowerCase().includes(searchQuery.toLowerCase())
         );
       });
-      setFilteredUsers(filtered);
     }
+    
+    setFilteredUsers(filtered);
   }, [searchQuery, users, currentUser]);
 
   const fetchCurrentUser = async () => {
     try {
       const result = await apiService.getCurrentUser();
+      console.log('Current user fetch result:', result);
       if (result.success && result.data) {
         setCurrentUser(result.data);
+        console.log('Current user set to:', result.data);
       }
     } catch (error) {
       console.error('Error fetching current user:', error);
@@ -122,20 +124,20 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
       return;
     }
 
-    if (selectedMembers.size === 0) {
-      Alert.alert('Error', 'Please select at least one member for the group');
-      return;
-    }
-
     setLoading(true);
     try {
-      // Get emails of selected members
+      // Get emails of selected members (excluding current user since they're automatically included)
       const memberEmails = users
         .filter(user => selectedMembers.has(user.id))
         .map(user => user.email);
 
+      // Automatically include current user in the group
+      if (currentUser?.email) {
+        memberEmails.push(currentUser.email);
+      }
+
       console.log('Selected members:', Array.from(selectedMembers));
-      console.log('Member emails to send:', memberEmails);
+      console.log('Member emails to send (including current user):', memberEmails);
 
       // Create group with members in one API call
       const groupData = {
@@ -159,8 +161,9 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
         setSearchQuery('');
         
         // Navigate to success screen with group creation message
+        const totalMembers = selectedMembers.size + 1; // +1 for current user
         navigation.navigate('success', {
-          message: `Group "${name}" has been created successfully with ${selectedMembers.size} members!`,
+          message: `Group "${name}" has been created successfully with ${totalMembers} members!`,
           nextScreen: 'groups'
         });
       } else {
@@ -203,7 +206,7 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
             
             <Text style={styles.formTitle}>New Group</Text>
             <Text style={styles.formSubtitle}>
-              Create a group to split expenses with friends and family
+              Create a group to split expenses with friends and family. You'll automatically be added as a member.
             </Text>
 
             <View style={styles.form}>
@@ -240,9 +243,9 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
                 <UserPlus size={20} color="#3b82f6" />
                 <Text style={styles.membersTitle}>Add Members</Text>
               </View>
-              {selectedMembers.size > 0 && (
+              {selectedMembers.size >= 0 && (
                 <Chip mode="outlined" style={styles.selectedChip}>
-                  {selectedMembers.size} selected
+                  {selectedMembers.size + 1} total
                 </Chip>
               )}
             </View>
@@ -257,19 +260,22 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
               icon={() => <Search size={20} color="#6b7280" />}
             />
 
-            {/* Selected Members Summary */}
-            {selectedMembers.size > 0 && (
-              <View style={styles.selectedMembersContainer}>
-                <Text style={styles.selectedMembersTitle}>Selected Members:</Text>
-                <View style={styles.selectedMembersTags}>
-                  {getSelectedMemberNames().map((name, index) => (
-                    <Chip key={index} mode="flat" style={styles.selectedMemberChip}>
-                      {name}
-                    </Chip>
-                  ))}
-                </View>
+            {/* Group Members Section - Always show current user + selected members */}
+            <View style={styles.selectedMembersContainer}>
+              <Text style={styles.selectedMembersTitle}>Group Members:</Text>
+              <View style={styles.selectedMembersTags}>
+                {/* Current user (always included) */}
+                <Chip key="current-user" mode="flat" style={styles.currentUserChip}>
+                  {currentUser?.full_name || currentUser?.first_name || currentUser?.email || 'You'} (You)
+                </Chip>
+                {/* Selected members */}
+                {getSelectedMemberNames().map((name, index) => (
+                  <Chip key={index} mode="flat" style={styles.selectedMemberChip}>
+                    {name}
+                  </Chip>
+                ))}
               </View>
-            )}
+            </View>
 
             {/* Users List */}
             <View style={styles.usersList}>
@@ -323,11 +329,11 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
             mode="contained"
             onPress={handleCreateGroup}
             loading={loading}
-            disabled={loading || !name.trim() || selectedMembers.size === 0}
+            disabled={loading || !name.trim()}
             style={styles.createButton}
             contentStyle={styles.buttonContent}
           >
-            {loading ? 'Creating...' : `Create Group${selectedMembers.size > 0 ? ` with ${selectedMembers.size} members` : ''}`}
+            {loading ? 'Creating...' : `Create Group${selectedMembers.size > 0 ? ` with ${selectedMembers.size + 1} members` : ' (just you)'}`}
           </Button>
 
           <Button
@@ -465,6 +471,9 @@ const styles = StyleSheet.create({
   },
   selectedMemberChip: {
     backgroundColor: '#3b82f6',
+  },
+  currentUserChip: {
+    backgroundColor: '#10b981',
   },
   usersList: {
     gap: 8,

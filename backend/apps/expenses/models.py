@@ -46,7 +46,7 @@ class Expense(models.Model):
     
     class Meta:
         db_table = 'expenses'
-        ordering = ['-expense_date']
+        ordering = ['-created_at']
     
     def __str__(self):
         return f"{self.title} - ${self.amount} by {self.paid_by.full_name}"

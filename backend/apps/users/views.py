@@ -160,7 +160,7 @@ class DashboardView(generics.RetrieveAPIView):
             Q(group_id__in=user_groups) |  # Group expenses where user is member
             Q(group__isnull=True, paid_by=user) |  # Personal expenses paid by user
             Q(expense_splits__user=user)  # Any expenses where user has splits
-        ).distinct().order_by('-expense_date')[:5]
+        ).distinct().order_by('-created_at')[:10]
         
         # Count expenses where user is involved (either paid by user or user has splits)
         total_expenses = Expense.objects.filter(

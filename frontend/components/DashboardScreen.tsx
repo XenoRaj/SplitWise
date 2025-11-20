@@ -7,9 +7,32 @@ import { Plus, Users, CreditCard, Home, ArrowUpRight, ArrowDownLeft } from 'luci
 import { apiService } from '../services/api';
 import type { User, Expense } from '../App';
 
+// Helper function to get relative time
+const getRelativeTime = (dateString: string) => {
+  const now = new Date();
+  const expenseDate = new Date(dateString);
+  const diffInMs = now.getTime() - expenseDate.getTime();
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+  
+  if (diffInDays > 7) {
+    return `${diffInDays} days ago`;
+  } else if (diffInDays > 0) {
+    return `${diffInDays} day${diffInDays === 1 ? '' : 's'} ago`;
+  } else if (diffInHours > 0) {
+    return `${diffInHours} hour${diffInHours === 1 ? '' : 's'} ago`;
+  } else if (diffInMinutes > 0) {
+    return `${diffInMinutes} minute${diffInMinutes === 1 ? '' : 's'} ago`;
+  } else {
+    return 'Just now';
+  }
+};
+
 type RootStackParamList = {
   dashboard: undefined;
   'add-expense': undefined;
+  'all-expenses': undefined;
   groups: undefined;
   profile: undefined;
   'expense-details': { expense: Expense };
@@ -221,7 +244,7 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
       <ScrollView style={styles.expensesSection} contentContainerStyle={styles.expensesContent}>
         <View style={styles.expensesHeader}>
           <Text style={styles.sectionTitle}>Recent Expenses</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('all-expenses')}>
             <Text style={styles.viewAll}>View All</Text>
           </TouchableOpacity>
         </View>
@@ -243,7 +266,7 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
                     {expense.split_type === 'equal' ? 'Split Equally' : expense.split_type}
                   </Chip>
                   <Text style={styles.expenseDate}>
-                    {new Date(expense.expense_date).toLocaleDateString()}
+                    {new Date(expense.expense_date).toLocaleDateString()} • {getRelativeTime(expense.created_at)}
                   </Text>
                 </View>
                 <Text style={styles.expenseMeta}>
