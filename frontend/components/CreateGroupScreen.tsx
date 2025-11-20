@@ -69,11 +69,14 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
 
   const fetchCurrentUser = async () => {
     try {
-      const result = await apiService.getCurrentUser();
-      console.log('Current user fetch result:', result);
-      if (result.success && result.data) {
-        setCurrentUser(result.data);
-        console.log('Current user set to:', result.data);
+      // Use dashboard API to get current user data (same as AddExpenseScreen)
+      const result = await apiService.getDashboardData();
+      console.log('Dashboard result for current user:', result);
+      if (result.success && result.data?.user) {
+        setCurrentUser(result.data.user);
+        console.log('Current user set to:', result.data.user);
+      } else {
+        console.error('Failed to get user from dashboard:', result.error);
       }
     } catch (error) {
       console.error('Error fetching current user:', error);
