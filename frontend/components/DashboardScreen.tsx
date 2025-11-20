@@ -131,6 +131,8 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
     netBalance,
     stats
   });
+  
+  console.log('Recent expenses from API:', recentExpenses);
 
   return (
     <View style={styles.container}>      
@@ -225,7 +227,7 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
         </View>
 
         <View style={styles.expensesList}>
-          {recentExpenses.map((expense) => (
+          {recentExpenses.map((expense: any) => (
             <TouchableOpacity
               key={expense.id}
               style={styles.expenseCard}
@@ -234,24 +236,29 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
               <View style={styles.expenseContent}>
                 <View style={styles.expenseMain}>
                   <Text style={styles.expenseTitle}>{expense.title}</Text>
-                  <Text style={styles.expenseAmount}>${expense.amount.toFixed(2)}</Text>
+                  <Text style={styles.expenseAmount}>${parseFloat(expense.amount).toFixed(2)}</Text>
                 </View>
                 <View style={styles.expenseDetails}>
-                  <Chip style={styles.categoryChip}>{expense.category}</Chip>
+                  <Chip style={styles.categoryChip}>
+                    {expense.split_type === 'equal' ? 'Split Equally' : expense.split_type}
+                  </Chip>
                   <Text style={styles.expenseDate}>
-                    {new Date(expense.date).toLocaleDateString()}
+                    {new Date(expense.expense_date).toLocaleDateString()}
                   </Text>
                 </View>
                 <Text style={styles.expenseMeta}>
-                  Paid by {expense.paidBy} • Split {expense.splitWith.length} ways
+                  Paid by {expense.paid_by?.full_name || expense.paid_by?.first_name || expense.paid_by?.email || 'Unknown'}
+                  {expense.expense_splits && expense.expense_splits.length > 0 && 
+                    ` • Split ${expense.expense_splits.length} ways`
+                  }
+                  {expense.group && ` • ${expense.group.name}`}
+                  {!expense.group && expense.expense_splits?.length <= 1 && ' • Personal Expense'}
                 </Text>
               </View>
               <View style={styles.expenseStatus}>
-                {expense.settled ? (
-                  <Chip mode="flat" style={styles.settledChip}>Settled</Chip>
-                ) : (
-                  <Chip mode="flat" style={styles.pendingChip}>Pending</Chip>
-                )}
+                <Chip mode="flat" style={styles.pendingChip}>
+                  ${parseFloat(expense.amount).toFixed(2)}
+                </Chip>
               </View>
             </TouchableOpacity>
           ))}

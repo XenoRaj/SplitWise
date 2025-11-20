@@ -25,7 +25,9 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
   const { expense } = route.params;
   const [newComment, setNewComment] = useState('');
 
-  const splitAmount = expense.amount / expense.splitWith.length;
+  // Handle expense_splits safely
+  const expenseSplits = expense.expense_splits || [];
+  const splitAmount = expenseSplits.length > 0 ? parseFloat(expense.amount) / expenseSplits.length : parseFloat(expense.amount);
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
@@ -58,9 +60,9 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
           <Card.Content style={styles.cardContent}>
             <View style={styles.expenseHeader}>
               <Text style={styles.expenseTitle}>{expense.title}</Text>
-              <View style={[styles.statusBadge, expense.settled ? styles.settledBadge : styles.pendingBadge]}>
-                <Text style={[styles.statusText, expense.settled ? styles.settledText : styles.pendingText]}>
-                  {expense.settled ? 'Settled' : 'Pending'}
+              <View style={[styles.statusBadge, styles.pendingBadge]}>
+                <Text style={[styles.statusText, styles.pendingText]}>
+                  Pending
                 </Text>
               </View>
             </View>
@@ -70,14 +72,14 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
                 <DollarSign size={16} color="#6b7280" />
                 <View style={styles.expenseItemContent}>
                   <Text style={styles.expenseLabel}>Total Amount</Text>
-                  <Text style={styles.expenseValue}>${expense.amount.toFixed(2)}</Text>
+                  <Text style={styles.expenseValue}>${parseFloat(expense.amount).toFixed(2)}</Text>
                 </View>
               </View>
               <View style={styles.expenseItem}>
                 <Calendar size={16} color="#6b7280" />
                 <View style={styles.expenseItemContent}>
                   <Text style={styles.expenseLabel}>Date</Text>
-                  <Text style={styles.expenseValue}>{new Date(expense.date).toLocaleDateString()}</Text>
+                  <Text style={styles.expenseValue}>{new Date(expense.expense_date).toLocaleDateString()}</Text>
                 </View>
               </View>
             </View>
@@ -85,15 +87,17 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
             <View style={styles.expenseItem}>
               <Users size={16} color="#6b7280" />
               <View style={styles.expenseItemContent}>
-                <Text style={styles.expenseLabel}>Category</Text>
-                <Text style={styles.expenseValue}>{expense.category}</Text>
+                <Text style={styles.expenseLabel}>Split Type</Text>
+                <Text style={styles.expenseValue}>{expense.split_type || 'equal'}</Text>
               </View>
             </View>
 
             <View style={styles.expenseItem}>
               <View style={styles.expenseItemContent}>
                 <Text style={styles.expenseLabel}>Paid by</Text>
-                <Text style={styles.expenseValue}>{expense.paidBy}</Text>
+                <Text style={styles.expenseValue}>
+                  {expense.paid_by?.full_name || expense.paid_by?.first_name || expense.paid_by?.email || 'Unknown'}
+                </Text>
               </View>
             </View>
           </Card.Content>
@@ -108,30 +112,29 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
             </View>
             
             <View style={styles.splitList}>
-              {/* Payer */}
-              <View style={styles.splitItemPayer}>
-                <Avatar.Text size={40} label={expense.paidBy.split(' ').map(n => n[0]).join('')} style={styles.splitAvatar} />
-                <View style={styles.splitContent}>
-                  <Text style={styles.splitName}>{expense.paidBy}</Text>
-                  <Text style={styles.splitRole}>Paid the bill</Text>
-                </View>
-                <View style={styles.splitAmount}>
-                  <Text style={styles.amountPositive}>+${(expense.amount - splitAmount).toFixed(2)}</Text>
-                  <Text style={styles.amountLabel}>is owed</Text>
-                </View>
-              </View>
-
               {/* Split participants */}
-              {expense.splitWith.filter(person => person !== expense.paidBy).map((person, index) => (
-                <View key={index} style={styles.splitItemOwer}>
-                  <Avatar.Text size={40} label={person.split(' ').map(n => n[0]).join('')} style={styles.splitAvatar} />
+              {expenseSplits.map((split: any, index: number) => (
+                <View key={split.id || index} style={styles.splitItem}>
+                  <Avatar.Text 
+                    size={40} 
+                    label={(split.user?.first_name || split.user?.email || 'U').charAt(0).toUpperCase()}
+                    style={styles.splitAvatar} 
+                  />
                   <View style={styles.splitContent}>
-                    <Text style={styles.splitName}>{person}</Text>
-                    <Text style={styles.splitRole}>Owes their share</Text>
+                    <Text style={styles.splitName}>
+                      {split.user?.full_name || split.user?.first_name || split.user?.email || 'Unknown'}
+                    </Text>
+                    <Text style={styles.splitRole}>
+                      {split.user?.id === expense.paid_by?.id ? 'Already paid their share' : 'Owes their share'}
+                    </Text>
                   </View>
                   <View style={styles.splitAmount}>
-                    <Text style={styles.amountNegative}>-${splitAmount.toFixed(2)}</Text>
-                    <Text style={styles.amountLabel}>owes</Text>
+                    <Text style={styles.amountNeutral}>
+                      ${parseFloat(split.amount).toFixed(2)}
+                    </Text>
+                    <Text style={styles.amountLabel}>
+                      {split.user?.id === expense.paid_by?.id ? 'share' : 'owes'}
+                    </Text>
                   </View>
                 </View>
               ))}
@@ -144,10 +147,10 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
           <Card.Content style={styles.cardContent}>
             <View style={styles.cardHeader}>
               <MessageSquare size={20} color="#1f2937" />
-              <Text style={styles.cardTitle}>Comments ({expense.comments.length})</Text>
+              <Text style={styles.cardTitle}>Comments ({expense.comments?.length || 0})</Text>
             </View>
             
-            {expense.comments.length > 0 ? (
+            {expense.comments && expense.comments.length > 0 ? (
               <View style={styles.commentsList}>
                 {expense.comments.map((comment) => (
                   <View key={comment.id} style={styles.commentItem}>
@@ -191,20 +194,18 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
         </Card>
       </ScrollView>
 
-      {/* Footer Actions */}
-      {!expense.settled && (
-        <View style={styles.footer}>
-          <Button 
-            mode="contained"
-            onPress={handleSettle}
-            style={styles.settleButton}
-            contentStyle={styles.buttonContent}
-            icon={() => <CreditCard size={16} color="#fff" />}
-          >
-            Settle Payment
-          </Button>
-        </View>
-      )}
+      {/* Footer Actions - Always show settle button since API doesn't track settled status */}
+      <View style={styles.footer}>
+        <Button 
+          mode="contained"
+          onPress={handleSettle}
+          style={styles.settleButton}
+          contentStyle={styles.buttonContent}
+          icon={() => <CreditCard size={16} color="#fff" />}
+        >
+          Settle Payment
+        </Button>
+      </View>
     </View>
   );
 }
@@ -236,15 +237,13 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   cardTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937', marginLeft: 8 },
   splitList: { gap: 12 },
-  splitItemPayer: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#f0fdf4', borderRadius: 8 },
-  splitItemOwer: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#fef2f2', borderRadius: 8 },
+  splitItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
   splitAvatar: { backgroundColor: '#e5e7eb' },
   splitContent: { flex: 1, marginLeft: 12 },
   splitName: { fontSize: 16, fontWeight: '500', color: '#1f2937' },
   splitRole: { fontSize: 14, color: '#6b7280' },
   splitAmount: { alignItems: 'flex-end' },
-  amountPositive: { fontSize: 16, fontWeight: '600', color: '#16a34a' },
-  amountNegative: { fontSize: 16, fontWeight: '600', color: '#dc2626' },
+  amountNeutral: { fontSize: 16, fontWeight: '600', color: '#374151' },
   amountLabel: { fontSize: 12, color: '#6b7280' },
   commentsCard: { elevation: 2 },
   commentsList: { marginBottom: 16, gap: 12 },

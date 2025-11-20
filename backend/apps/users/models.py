@@ -41,9 +41,11 @@ class CustomUser(AbstractUser):
         from django.db.models import Sum
         from apps.expenses.models import ExpenseSplit, Settlement, Expense
         
-        # Amount user owes to others (splits where they are assigned)
-        # For now, let's not worry about settlements since we don't have that logic yet
-        owed_to_others = self.expense_splits.aggregate(total=Sum('amount'))['total'] or 0
+        # Amount user owes to others (splits where they are assigned, but EXCLUDE expenses they paid for)
+        # Only count splits from expenses paid by OTHER people
+        owed_to_others = self.expense_splits.exclude(
+            expense__paid_by=self
+        ).aggregate(total=Sum('amount'))['total'] or 0
         
         # Amount others owe to user (from expenses they paid, minus their own split)
         owed_by_others = 0

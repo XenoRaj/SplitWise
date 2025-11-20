@@ -145,9 +145,22 @@ class DashboardView(generics.RetrieveAPIView):
         balance_data = user.get_balance_summary()
         
         # Get expense and group counts
-        from apps.expenses.models import Expense
-        from apps.groups.models import Group
+        from apps.expenses.models import Expense, ExpenseSplit
+        from apps.expenses.serializers import ExpenseSerializer
+        from apps.groups.models import Group, GroupMembership
         from django.db.models import Q
+        
+        # Get user's groups for filtering
+        user_groups = GroupMembership.objects.filter(
+            user=user, is_active=True
+        ).values_list('group_id', flat=True)
+        
+        # Get recent expenses (both group and personal expenses where user is involved)
+        recent_expenses = Expense.objects.filter(
+            Q(group_id__in=user_groups) |  # Group expenses where user is member
+            Q(group__isnull=True, paid_by=user) |  # Personal expenses paid by user
+            Q(expense_splits__user=user)  # Any expenses where user has splits
+        ).distinct().order_by('-expense_date')[:5]
         
         # Count expenses where user is involved (either paid by user or user has splits)
         total_expenses = Expense.objects.filter(
@@ -167,9 +180,13 @@ class DashboardView(generics.RetrieveAPIView):
                 'net_balance': balance_data['net_balance'],      # Net balance
                 'groups_count': total_groups,
             },
-            'recent_expenses': [],  # TODO: Add recent expenses query
+            'recent_expenses': ExpenseSerializer(recent_expenses, many=True).data,
             'recent_groups': [],    # TODO: Add recent groups query
         }
+        
+        print(f"Dashboard data for user {user.email}:")
+        print(f"Recent expenses count: {len(recent_expenses)}")
+        print(f"Balance data: {balance_data}")
         
         return Response(dashboard_data)
 

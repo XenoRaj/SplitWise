@@ -53,16 +53,32 @@ export interface User {
 }
 
 export interface Expense {
-  id: string;
+  id: number;
   title: string;
-  amount: number;
-  date: string;
-  paidBy: string;
-  splitWith: string[];
-  category: string;
-  receipt?: string;
-  settled: boolean;
-  comments: Array<{
+  amount: string; // API returns as string
+  description?: string;
+  expense_date: string;
+  paid_by: {
+    id: number;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+  };
+  split_type: string;
+  group?: any;
+  expense_splits: Array<{
+    id: number;
+    amount: string;
+    user: {
+      id: number;
+      email: string;
+      first_name?: string;
+      last_name?: string;
+      full_name?: string;
+    };
+  }>;
+  comments?: Array<{
     id: string;
     user: string;
     message: string;
@@ -111,37 +127,8 @@ export default function App() {
     twoFactorEnabled: true,
   };
 
-  const mockExpenses: Expense[] = [
-    {
-      id: "1",
-      title: "Dinner at Italiano",
-      amount: 85.6,
-      date: "2024-09-28",
-      paidBy: "Alex Johnson",
-      splitWith: ["Sarah Chen", "Mike Wilson", "Emily Davis"],
-      category: "Food & Dining",
-      settled: false,
-      comments: [
-        {
-          id: "1",
-          user: "Sarah Chen",
-          message: "Thanks for organizing!",
-          timestamp: "2024-09-28T20:30:00Z",
-        },
-      ],
-    },
-    {
-      id: "2",
-      title: "Uber to Airport",
-      amount: 32.4,
-      date: "2024-09-27",
-      paidBy: "Mike Wilson",
-      splitWith: ["Alex Johnson"],
-      category: "Transportation",
-      settled: true,
-      comments: [],
-    },
-  ];
+  // Remove mock expenses as we're using real API data
+  const mockExpenses: Expense[] = [];
 
   const mockGroups: Group[] = [
     {

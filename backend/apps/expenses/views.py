@@ -76,23 +76,23 @@ def user_dashboard_summary(request):
         user=user, is_active=True
     ).values_list('group_id', flat=True)
     
-    # Get recent expenses
+    # Get recent expenses (both group and personal expenses where user is involved)
     recent_expenses = Expense.objects.filter(
-        group_id__in=user_groups
-    ).order_by('-expense_date')[:5]
+        Q(group_id__in=user_groups) |  # Group expenses where user is member
+        Q(group__isnull=True, paid_by=user) |  # Personal expenses paid by user
+        Q(expense_splits__user=user)  # Any expenses where user has splits
+    ).distinct().order_by('-expense_date')[:5]
     
     # Calculate what user owes (expenses paid by others where user has a split)
     user_owes = ExpenseSplit.objects.filter(
-        user=user,
-        expense__group_id__in=user_groups
+        user=user
     ).exclude(
         expense__paid_by=user
     ).aggregate(total=Sum('amount'))['total'] or 0
     
     # Calculate what others owe user (expenses paid by user where others have splits)
     others_owe = ExpenseSplit.objects.filter(
-        expense__paid_by=user,
-        expense__group_id__in=user_groups
+        expense__paid_by=user
     ).exclude(
         user=user
     ).aggregate(total=Sum('amount'))['total'] or 0
