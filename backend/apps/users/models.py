@@ -64,10 +64,16 @@ class CustomUser(AbstractUser):
 
 class OTP(models.Model):
     """
-    Model to store OTP codes for two-factor authentication
+    Model to store OTP codes for two-factor authentication and password reset
     """
+    PURPOSE_CHOICES = [
+        ('2fa', 'Two Factor Authentication'),
+        ('password_reset', 'Password Reset'),
+    ]
+    
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='otps')
     code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES, default='2fa')
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     is_used = models.BooleanField(default=False)
