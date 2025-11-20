@@ -1,8 +1,8 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { Button, Card, Avatar } from 'react-native-paper';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { Button, Card, Avatar, ActivityIndicator } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
+import { RouteProp, useFocusEffect } from '@react-navigation/native';
 import { 
   ArrowLeft, 
   Users, 
@@ -14,22 +14,56 @@ import {
   Clock,
   
 } from 'lucide-react-native';
-import type { Group, GroupExpense, User } from '../App';
+import { apiService } from '../services/api';
+import type { User } from '../App';
+
+interface GroupExpense {
+  id: number;
+  title: string;
+  description?: string;
+  amount: string;
+  expense_date: string;
+  paid_by: {
+    id: number;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+  };
+  group?: {
+    id: number;
+    name: string;
+  };
+  status: 'pending' | 'completed' | 'rejected';
+}
+
+interface Group {
+  id: number;
+  name: string;
+  description?: string;
+  created_by: {
+    id: number;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+  };
+  member_count: number;
+  created_at: string;
+}
 
 type RootStackParamList = {
-  groupDetails: { group: Group };
+  'group-details': { group: Group };
   groups: undefined;
-  addExpense: undefined;
-  expenseCreator: { categoryType: string; expenses: GroupExpense[]; group: Group };
-  verificationCompleted: { categoryType: string; expenses: GroupExpense[]; group: Group };
-  verificationRejected: { categoryType: string; expenses: GroupExpense[]; group: Group };
-  verificationPending: { categoryType: string; expenses: GroupExpense[]; group: Group };
-  settlePayment: undefined;
+  'add-expense': { groupId?: number };
+  'expense-creator': { categoryType: string; expenses: GroupExpense[]; group: Group };
+  'verification-completed': { categoryType: string; expenses: GroupExpense[]; group: Group };
+  'verification-rejected': { categoryType: string; expenses: GroupExpense[]; group: Group };
+  'verification-pending': { categoryType: string; expenses: GroupExpense[]; group: Group };
+  'settle-payment': undefined;
   // Add other screens...
 };
 
-type GroupDetailsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'groupDetails'>;
-type GroupDetailsScreenRouteProp = RouteProp<RootStackParamList, 'groupDetails'>;
+type GroupDetailsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'group-details'>;
+type GroupDetailsScreenRouteProp = RouteProp<RootStackParamList, 'group-details'>;
 
 interface GroupDetailsScreenProps {
   navigation: GroupDetailsScreenNavigationProp;
@@ -39,6 +73,70 @@ interface GroupDetailsScreenProps {
 
 export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScreenProps) {
   const { group } = route.params;
+  const [expenses, setExpenses] = useState<GroupExpense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [groupStats, setGroupStats] = useState({
+    totalExpenses: 0,
+    userBalance: 0,
+    userOwes: 0,
+    userOwed: 0
+  });
+
+  useEffect(() => {
+    fetchGroupExpenses();
+  }, []);
+
+  // Refresh when returning to screen
+  useFocusEffect(
+    useCallback(() => {
+      fetchGroupExpenses();
+    }, [])
+  );
+
+  const fetchGroupExpenses = async () => {
+    try {
+      setLoading(true);
+      console.log('Fetching expenses for group:', group.id);
+      const result = await apiService.getGroupExpenses(group.id);
+      
+      if (result.success) {
+        console.log('Group expenses fetched:', result.data);
+        setExpenses(result.data);
+        calculateGroupStats(result.data);
+      } else {
+        console.error('Failed to fetch group expenses:', result.error);
+        Alert.alert('Error', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to fetch group expenses:', error);
+      Alert.alert('Error', 'Failed to load group expenses');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const calculateGroupStats = (expensesData: GroupExpense[]) => {
+    const totalExpenses = expensesData.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+    
+    // Calculate what user paid
+    const userPaid = expensesData
+      .filter(expense => expense.paid_by.id === user?.id)
+      .reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+    
+    // For simplification, assuming equal split among members
+    // In real app, you'd calculate based on ExpenseSplit data
+    const userShare = totalExpenses / (group.member_count || 1);
+    const balance = userPaid - userShare;
+    
+    setGroupStats({
+      totalExpenses,
+      userBalance: balance,
+      userOwes: Math.max(0, -balance),
+      userOwed: Math.max(0, balance)
+    });
+  };
 
   const getStatusIcon = (status: GroupExpense['status']) => {
     switch (status) {
@@ -68,10 +166,10 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
 
   const categorizeExpenses = () => {
     const categories = {
-      creator: group.expenses.filter(expense => expense.creator === user?.name),
-      completed: group.expenses.filter(expense => expense.status === 'completed'),
-      rejected: group.expenses.filter(expense => expense.status === 'rejected'),
-      pending: group.expenses.filter(expense => expense.status === 'pending')
+      creator: expenses.filter(expense => expense.paid_by.id === user?.id),
+      completed: expenses.filter(expense => expense.status === 'completed'),
+      rejected: expenses.filter(expense => expense.status === 'rejected'),
+      pending: expenses.filter(expense => expense.status === 'pending')
     };
     return categories;
   };
@@ -87,16 +185,16 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
 
     switch (categoryType) {
       case 'creator':
-        navigation.navigate('expenseCreator', categoryData);
+        navigation.navigate('expense-creator', categoryData);
         break;
       case 'completed':
-        navigation.navigate('verificationCompleted', categoryData);
+        navigation.navigate('verification-completed', categoryData);
         break;
       case 'rejected':
-        navigation.navigate('verificationRejected', categoryData);
+        navigation.navigate('verification-rejected', categoryData);
         break;
       case 'pending':
-        navigation.navigate('verificationPending', categoryData);
+        navigation.navigate('verification-pending', categoryData);
         break;
     }
   };
@@ -109,10 +207,12 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
           <ArrowLeft size={24} color="#374151" />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.groupAvatar}>{group.avatar}</Text>
+          <View style={styles.groupAvatarContainer}>
+            <Text style={styles.groupAvatar}>{group.name.charAt(0).toUpperCase()}</Text>
+          </View>
           <View>
             <Text style={styles.headerTitle}>{group.name}</Text>
-            <Text style={styles.headerSubtitle}>{group.members.length} members</Text>
+            <Text style={styles.headerSubtitle}>{group.member_count} members</Text>
           </View>
         </View>
       </View>
@@ -125,21 +225,28 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
               <DollarSign size={16} color="#6b7280" />
             </View>
             <Text style={styles.statLabel}>Total Expenses</Text>
-            <Text style={styles.statValue}>${group.totalExpenses.toFixed(2)}</Text>
+            <Text style={styles.statValue}>${groupStats.totalExpenses.toFixed(2)}</Text>
           </View>
           <View style={styles.statItem}>
             <View style={styles.statIcon}>
               <Users size={16} color="#6b7280" />
             </View>
             <Text style={styles.statLabel}>Your Balance</Text>
-            <Text style={[styles.statValue, { color: group.balance >= 0 ? '#16a34a' : '#dc2626' }]}>
-              ${Math.abs(group.balance).toFixed(2)} {group.balance >= 0 ? 'owed' : 'owing'}
+            <Text style={[styles.statValue, { color: groupStats.userBalance >= 0 ? '#16a34a' : '#dc2626' }]}>
+              ${Math.abs(groupStats.userBalance).toFixed(2)} {groupStats.userBalance >= 0 ? 'owed to you' : 'you owe'}
             </Text>
           </View>
         </View>
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text style={styles.loadingText}>Loading group expenses...</Text>
+          </View>
+        ) : (
+          <>
         {/* Expense Categories */}
         <View style={styles.categoriesSection}>
           <Text style={styles.sectionTitle}>Expense Categories</Text>
@@ -243,27 +350,38 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
         <View style={styles.activitySection}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
           <View style={styles.activityList}>
-            {group.expenses.slice(0, 3).map((expense) => (
-              <TouchableOpacity key={expense.id} style={styles.activityItem}>
+            {expenses.length === 0 ? (
+              <Card style={styles.activityItem}>
                 <Card.Content style={styles.activityContent}>
-                  <View style={styles.activityHeader}>
-                    {getStatusIcon(expense.status)}
-                    <View style={styles.activityText}>
-                      <Text style={styles.activityTitle}>{expense.title}</Text>
-                      <Text style={styles.activityMeta}>
-                        Added by {expense.creator} • {expense.date}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.activityFooter}>
-                    <Text style={styles.activityAmount}>${expense.amount.toFixed(2)}</Text>
-                    <View style={[styles.statusChip, { backgroundColor: getStatusColor(expense.status) }]}>
-                      <Text style={styles.statusChipText}>{expense.status}</Text>
-                    </View>
-                  </View>
+                  <Text style={styles.emptyText}>No expenses yet. Add your first expense to get started!</Text>
                 </Card.Content>
-              </TouchableOpacity>
-            ))}
+              </Card>
+            ) : (
+              expenses.slice(0, 3).map((expense) => (
+                <TouchableOpacity key={expense.id} style={styles.activityItem}>
+                  <Card.Content style={styles.activityContent}>
+                    <View style={styles.activityHeader}>
+                      {getStatusIcon(expense.status)}
+                      <View style={styles.activityText}>
+                        <Text style={styles.activityTitle}>{expense.title}</Text>
+                        <Text style={styles.activityMeta}>
+                          Added by {expense.paid_by.first_name || expense.paid_by.email} • {new Date(expense.expense_date).toLocaleDateString()}
+                        </Text>
+                        {expense.description && (
+                          <Text style={styles.activityDescription}>{expense.description}</Text>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.activityFooter}>
+                      <Text style={styles.activityAmount}>${parseFloat(expense.amount).toFixed(2)}</Text>
+                      <View style={[styles.statusChip, { backgroundColor: getStatusColor(expense.status) }]}>
+                        <Text style={styles.statusChipText}>{expense.status}</Text>
+                      </View>
+                    </View>
+                  </Card.Content>
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         </View>
 
@@ -273,7 +391,14 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
           <View style={styles.actionButtons}>
             <Button
               mode="contained"
-              onPress={() => navigation.navigate('addExpense')}
+              onPress={() => {
+                console.log('=== GROUP DETAILS NAVIGATION ===');
+                console.log('Group object:', group);
+                console.log('Group ID:', group.id);
+                console.log('Navigating to add-expense with params:', { groupId: group.id });
+                console.log('===============================');
+                navigation.navigate('add-expense', { groupId: group.id })
+              }}
               style={[styles.actionButton, { backgroundColor: '#3b82f6' }]}
               contentStyle={styles.actionButtonContent}
               icon={() => <Plus size={20} color="#fff" />}
@@ -282,7 +407,7 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
             </Button>
             <Button
               mode="outlined"
-              onPress={() => navigation.navigate('settlePayment')}
+              onPress={() => navigation.navigate('settle-payment')}
               style={styles.actionButton}
               contentStyle={styles.actionButtonContent}
               icon={() => <DollarSign size={20} color="#3b82f6" />}
@@ -291,6 +416,8 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
             </Button>
           </View>
         </View>
+        </>
+        )}
       </ScrollView>
 
       {/* Security Badge */}
@@ -307,7 +434,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   backButton: { padding: 8, marginLeft: -8 },
   headerContent: { flexDirection: 'row', alignItems: 'center', flex: 1, marginLeft: 16 },
-  groupAvatar: { fontSize: 24, marginRight: 12 },
+  groupAvatarContainer: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#3b82f6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  groupAvatar: { fontSize: 18, color: '#fff', fontWeight: '600' },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
   headerSubtitle: { fontSize: 14, color: '#6b7280' },
   statsSection: { paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
@@ -318,6 +446,9 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingVertical: 16, paddingBottom: 100 },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 50 },
+  loadingText: { fontSize: 16, color: '#6b7280', marginTop: 16 },
+  emptyText: { fontSize: 16, color: '#6b7280', textAlign: 'center', fontStyle: 'italic' },
   categoriesSection: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937', marginBottom: 16 },
   categoriesList: { gap: 12 },
@@ -338,6 +469,7 @@ const styles = StyleSheet.create({
   activityText: { flex: 1, marginLeft: 8 },
   activityTitle: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
   activityMeta: { fontSize: 14, color: '#6b7280' },
+  activityDescription: { fontSize: 13, color: '#6b7280', marginTop: 4, fontStyle: 'italic' },
   activityFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   activityAmount: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
   statusChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },

@@ -12,6 +12,7 @@ import { AddExpenseScreen } from './components/AddExpenseScreen';
 import { ExpenseDetailsScreen } from './components/ExpenseDetailsScreen';
 import { GroupsScreen } from './components/GroupsScreen';
 import { GroupDetailsScreen } from './components/GroupDetailsScreen';
+import { CreateGroupScreen } from './components/CreateGroupScreen';
 import { ExpenseCreatorScreen } from './components/ExpenseCreatorScreen';
 import { VerificationCompletedScreen } from './components/VerificationCompletedScreen';
 import { VerificationRejectedScreen } from './components/VerificationRejectedScreen';
@@ -33,6 +34,7 @@ export type Screen =
   | "expense-details"
   | "groups"
   | "group-details"
+  | "createGroup"
   | "expense-creator"
   | "verification-completed"
   | "verification-rejected"
@@ -273,7 +275,10 @@ export default function App() {
             {(props) => <DashboardScreen {...props} {...commonProps} />}
           </Stack.Screen>
           <Stack.Screen name="add-expense">
-            {(props) => <AddExpenseScreen {...props} {...commonProps} />}
+            {(props) => {
+              console.log('App.tsx Stack.Screen - route params:', props.route.params);
+              return <AddExpenseScreen {...props} {...commonProps} />
+            }}
           </Stack.Screen>
           <Stack.Screen name="expense-details">
             {(props) => <ExpenseDetailsScreen {...props} {...commonProps} />}
@@ -283,6 +288,9 @@ export default function App() {
           </Stack.Screen>
           <Stack.Screen name="group-details">
             {(props) => <GroupDetailsScreen {...props} {...commonProps} />}
+          </Stack.Screen>
+          <Stack.Screen name="createGroup">
+            {(props) => <CreateGroupScreen {...props} {...commonProps} />}
           </Stack.Screen>
           <Stack.Screen name="expense-creator">
             {(props) => <ExpenseCreatorScreen {...props} {...commonProps} />}

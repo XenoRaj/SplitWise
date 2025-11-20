@@ -18,15 +18,22 @@ class ExpenseSplitSerializer(serializers.ModelSerializer):
 
 class ExpenseSerializer(serializers.ModelSerializer):
     paid_by = UserSerializer(read_only=True)
-    group = GroupSerializer(read_only=True)
+    group_id = serializers.SerializerMethodField()
+    group_name = serializers.SerializerMethodField()
     expense_splits = ExpenseSplitSerializer(many=True, read_only=True)
+    
+    def get_group_id(self, obj):
+        return obj.group.id if obj.group else None
+    
+    def get_group_name(self, obj):
+        return obj.group.name if obj.group else None
     
     class Meta:
         model = Expense
         fields = ('id', 'title', 'description', 'amount', 'currency', 
-                 'paid_by', 'group', 'split_type', 'receipt_image',
+                 'paid_by', 'group_id', 'group_name', 'split_type', 'receipt_image',
                  'created_at', 'updated_at', 'expense_date', 'expense_splits')
-        read_only_fields = ('id', 'created_at', 'updated_at', 'paid_by', 'group')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'paid_by', 'group_id', 'group_name')
 
 
 class ExpenseCreateSerializer(serializers.ModelSerializer):
@@ -69,12 +76,17 @@ class ExpenseCreateSerializer(serializers.ModelSerializer):
         if group_id:
             from apps.groups.models import Group
             group = Group.objects.get(id=group_id)
+            print(f"Found group: {group.name}")
         
         expense = Expense.objects.create(
             paid_by=request.user,
             group=group,
             **validated_data
         )
+        
+        print(f"Created expense: {expense.id}")
+        print(f"Expense group: {expense.group}")
+        print(f"Expense group_id: {expense.group_id}")
         
         # Create splits
         if splits_data:

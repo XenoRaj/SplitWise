@@ -55,27 +55,37 @@ class GroupCreateSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         validated_data['created_by'] = request.user
         
+        print(f"Creating group: {validated_data}")
+        print(f"Member emails: {member_emails}")
+        
         group = super().create(validated_data)
         
         # Add creator as admin
-        GroupMembership.objects.create(
+        creator_membership = GroupMembership.objects.create(
             group=group,
             user=request.user,
             is_admin=True
         )
+        print(f"Created creator membership: {creator_membership}")
         
         # Add members by email
         from apps.users.models import CustomUser
         for email in member_emails:
             try:
                 user = CustomUser.objects.get(email=email)
-                GroupMembership.objects.get_or_create(
+                membership, created = GroupMembership.objects.get_or_create(
                     group=group,
                     user=user,
                     defaults={'is_admin': False}
                 )
+                print(f"Added member {email}: created={created}, membership={membership}")
             except CustomUser.DoesNotExist:
+                print(f"User with email {email} does not exist - skipping")
                 pass  # Silently skip non-existent users
+        
+        # Verify final member count
+        final_count = group.group_memberships.filter(is_active=True).count()
+        print(f"Final group member count: {final_count}")
         
         return group
 

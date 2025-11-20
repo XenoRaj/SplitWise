@@ -116,18 +116,28 @@ def user_dashboard_summary(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def group_expenses(request, group_id):
+    print(f"=== GROUP EXPENSES API ===")
+    print(f"Requested group_id: {group_id}")
+    print(f"Requesting user: {request.user.id}")
+    
     # Check if user is member of the group
     membership = GroupMembership.objects.filter(
         group_id=group_id, user=request.user, is_active=True
     ).first()
     
     if not membership:
+        print(f"User {request.user.id} is not a member of group {group_id}")
         return Response(
             {'error': 'You are not a member of this group'}, 
             status=status.HTTP_403_FORBIDDEN
         )
     
     expenses = Expense.objects.filter(group_id=group_id).order_by('-expense_date')
+    print(f"Found {expenses.count()} expenses for group {group_id}")
+    for expense in expenses:
+        print(f"- Expense: {expense.title}, Amount: {expense.amount}, Group ID: {expense.group_id}")
+    print("=========================")
+    
     return Response(ExpenseSerializer(expenses, many=True).data)
 
 

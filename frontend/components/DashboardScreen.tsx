@@ -251,7 +251,7 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
                   {expense.expense_splits && expense.expense_splits.length > 0 && 
                     ` • Split ${expense.expense_splits.length} ways`
                   }
-                  {expense.group && ` • ${expense.group.name}`}
+                  {expense.group_name && ` • ${expense.group_name}`}
                   {!expense.group && expense.expense_splits?.length <= 1 && ' • Personal Expense'}
                 </Text>
               </View>

@@ -249,20 +249,6 @@ export const apiService = {
 
   // ===== EXPENSES API =====
 
-  // Create new expense
-  createExpense: async (expenseData) => {
-    try {
-      const response = await api.post('/expenses/', expenseData);
-      return { success: true, data: response.data };
-    } catch (error) {
-      console.error('Create expense failed:', error);
-      return { 
-        success: false, 
-        error: error.response?.data?.detail || error.message || 'Failed to create expense' 
-      };
-    }
-  },
-
   // Get all expenses for user
   getExpenses: async () => {
     try {
@@ -307,16 +293,58 @@ export const apiService = {
     }
   },
 
-  // Get group members
-  getGroupMembers: async (groupId) => {
+  // Create new group
+  createGroup: async (groupData) => {
     try {
-      const response = await api.get(`/groups/${groupId}/members/`);
+      const response = await api.post('/groups/', groupData);
       return { success: true, data: response.data };
     } catch (error) {
-      console.error('Get group members failed:', error);
+      console.error('Create group failed:', error);
       return { 
         success: false, 
-        error: error.response?.data?.detail || error.message || 'Failed to get group members' 
+        error: error.response?.data?.detail || error.message || 'Failed to create group' 
+      };
+    }
+  },
+
+  // Get single group details
+  getGroup: async (groupId) => {
+    try {
+      const response = await api.get(`/groups/${groupId}/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get group failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get group details' 
+      };
+    }
+  },
+
+  // Add member to group
+  addMemberToGroup: async (groupId, memberData) => {
+    try {
+      const response = await api.post(`/groups/${groupId}/members/`, memberData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Add member failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.response?.data?.detail || error.message || 'Failed to add member' 
+      };
+    }
+  },
+
+  // Remove member from group
+  removeMemberFromGroup: async (groupId, userId) => {
+    try {
+      const response = await api.delete(`/groups/${groupId}/members/${userId}/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Remove member failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.response?.data?.detail || error.message || 'Failed to remove member' 
       };
     }
   },
@@ -347,6 +375,20 @@ export const apiService = {
       return { 
         success: false, 
         error: error.response?.data?.detail || error.message || 'Failed to update 2FA settings' 
+      };
+    }
+  },
+
+  // Get group expenses
+  getGroupExpenses: async (groupId) => {
+    try {
+      const response = await api.get(`/expenses/groups/${groupId}/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get group expenses failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get group expenses' 
       };
     }
   },

@@ -2,20 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Alert } from 'react-native';
 import { Button, Card, Avatar, Checkbox, Chip } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RouteProp } from '@react-navigation/native';
+import { RouteProp, useRoute } from '@react-navigation/native';
 import { ArrowLeft, Shield, Camera, Users, DollarSign } from 'lucide-react-native';
 import { apiService } from '../services/api';
 import type { User } from '../App';
 
 type RootStackParamList = {
-  addExpense: undefined;
+  'add-expense': { groupId?: number } | undefined;
   dashboard: undefined;
-  success: { message: string };
+  success: { 
+    message: string;
+    nextScreen?: string;
+    groupData?: any;
+  };
+  'group-details': { group: any };
   // Add other screens...
 };
 
-type AddExpenseScreenNavigationProp = StackNavigationProp<RootStackParamList, 'addExpense'>;
-type AddExpenseScreenRouteProp = RouteProp<RootStackParamList, 'addExpense'>;
+type AddExpenseScreenNavigationProp = StackNavigationProp<RootStackParamList, 'add-expense'>;
+type AddExpenseScreenRouteProp = RouteProp<RootStackParamList, 'add-expense'>;
 
 interface AddExpenseScreenProps {
   navigation: AddExpenseScreenNavigationProp;
@@ -24,14 +29,42 @@ interface AddExpenseScreenProps {
   showLoading: (callback: () => void) => void;
 }
 
-export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseScreenProps) {
+export function AddExpenseScreen({ navigation, route, user, showLoading }: AddExpenseScreenProps) {
+  // Use multiple methods to get the groupId parameter
+  const currentRoute = useRoute();
+  const navigationState = navigation.getState();
+  
+  console.log('=== NAVIGATION DEBUG ===');
+  console.log('currentRoute.params:', currentRoute.params);
+  console.log('route.params:', route?.params);
+  console.log('navigation state routes:', navigationState.routes);
+  console.log('current route index:', navigationState.index);
+  console.log('current route from state:', navigationState.routes[navigationState.index]);
+  console.log('=====================');
+  
+  // Extract groupId with multiple fallbacks
+  const groupIdFromUseRoute = (currentRoute.params as any)?.groupId;
+  const groupIdFromRouteProp = (route?.params as any)?.groupId;
+  const currentRouteFromState = navigationState.routes[navigationState.index];
+  const groupIdFromNavigationState = (currentRouteFromState?.params as any)?.groupId;
+  
+  const groupId = groupIdFromUseRoute || groupIdFromRouteProp || groupIdFromNavigationState;
+  
+  console.log('=== EXTRACTED GROUP ID ===');
+  console.log('groupIdFromUseRoute:', groupIdFromUseRoute);
+  console.log('groupIdFromRouteProp:', groupIdFromRouteProp);
+  console.log('groupIdFromNavigationState:', groupIdFromNavigationState);
+  console.log('Final groupId:', groupId);
+  console.log('Type:', typeof groupId);
+  console.log('========================');
   const [formData, setFormData] = useState({
     title: '',
     amount: '',
     category: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
-    splitType: 'equal'
+    splitType: 'equal',
+    groupId: groupId || null
   });
   const [users, setUsers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -40,6 +73,7 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [groupData, setGroupData] = useState<any>(null);
 
   useEffect(() => {
     fetchCurrentUserAndUsers();
@@ -55,18 +89,45 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
         setCurrentUser(dashboardResult.data.user);
         console.log('Current user from dashboard:', dashboardResult.data.user);
         
-        // Then get all users and filter out current user
-        const usersResult = await apiService.getUsers();
-        if (usersResult.success) {
-          console.log('All users:', usersResult.data);
-          const otherUsers = usersResult.data.filter((u: any) => {
-            return u.id !== dashboardResult.data.user.id && u.id != dashboardResult.data.user.id;
-          });
-          console.log('Other users after filtering:', otherUsers);
-          setUsers(otherUsers);
-          setError('');
+        // If groupId is provided, fetch group details to get members
+        if (groupId) {
+          const groupResult = await apiService.getGroup(groupId);
+          if (groupResult.success) {
+            setGroupData(groupResult.data);
+            console.log('Group data:', groupResult.data);
+            
+            // Extract user data from group memberships, excluding current user
+            const groupMembers = groupResult.data.group_memberships?.filter((membership: any) => 
+              membership.user.id !== dashboardResult.data.user.id
+            ).map((membership: any) => ({
+              id: membership.user.id,
+              email: membership.user.email,
+              first_name: membership.user.first_name,
+              last_name: membership.user.last_name,
+              full_name: membership.user.full_name,
+              username: membership.user.username
+            })) || [];
+            
+            console.log('Group members (excluding current user):', groupMembers);
+            setUsers(groupMembers);
+            setError('');
+          } else {
+            setError('Failed to fetch group details');
+          }
         } else {
-          setError(usersResult.error);
+          // For personal expenses, get all users and filter out current user
+          const usersResult = await apiService.getUsers();
+          if (usersResult.success) {
+            console.log('All users:', usersResult.data);
+            const otherUsers = usersResult.data.filter((u: any) => {
+              return u.id !== dashboardResult.data.user.id && u.id != dashboardResult.data.user.id;
+            });
+            console.log('Other users after filtering:', otherUsers);
+            setUsers(otherUsers);
+            setError('');
+          } else {
+            setError(usersResult.error);
+          }
         }
       } else {
         setError('Failed to get current user data');
@@ -109,8 +170,8 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
   ];
 
   const handleAddExpense = async () => {
-    if (!formData.title || !formData.amount || !formData.category) {
-      setError('Please fill in all required fields');
+    if (!formData.title || !formData.amount) {
+      setError('Please fill in title and amount');
       return;
     }
 
@@ -130,39 +191,71 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
       setError('');
 
       // Create expense data for API
+      const totalAmount = parseFloat(formData.amount);
+      const numberOfPeople = selectedMembers.length + 1; // Including current user
+      
+      // Calculate splits with proper rounding to avoid decimal precision issues
+      // Convert to cents for calculation, then back to dollars
+      const totalCents = Math.round(totalAmount * 100);
+      const baseSplitCents = Math.floor(totalCents / numberOfPeople);
+      const remainderCents = totalCents % numberOfPeople; // Use modulo for exact remainder
+      
+      // Use Number() with toFixed() for exact decimal control
+      const baseSplitAmount = Number((baseSplitCents / 100).toFixed(2));
+      const creatorAmount = Number(((baseSplitCents + remainderCents) / 100).toFixed(2));
+      
+      console.log('Split calculation:', {
+        totalAmount,
+        totalCents,
+        numberOfPeople,
+        baseSplitCents,
+        remainderCents,
+        baseSplitAmount,
+        creatorAmount,
+        totalCheck: (baseSplitAmount * (numberOfPeople - 1)) + creatorAmount
+      });
+      
+      console.log('=== Expense Creation Debug ===');
+      console.log('Current groupId value:', groupId);
+      console.log('groupId type:', typeof groupId);
+      console.log('groupId || null result:', groupId || null);
+      
       const expenseData = {
         title: formData.title,
         description: formData.description,
-        amount: parseFloat(formData.amount),
+        amount: totalAmount,
         currency: 'USD',
         split_type: formData.splitType,
         expense_date: formData.date,
+        group_id: groupId || null, // Include group_id if creating group expense
         // Create splits for selected members + current user
         splits: selectedMembers.length > 0 ? [
-          // Include current user
+          // Include current user (give them any remainder to ensure total matches)
           {
             user_id: currentUser?.id || 0,
-            amount: parseFloat(formData.amount) / (selectedMembers.length + 1)
+            amount: creatorAmount
           },
           // Include selected members
           ...selectedMembers.map(memberId => ({
             user_id: parseInt(memberId),
-            amount: parseFloat(formData.amount) / (selectedMembers.length + 1)
+            amount: baseSplitAmount
           }))
         ] : [
           // Personal expense - only current user pays 100%
           {
             user_id: currentUser?.id || 0,
-            amount: parseFloat(formData.amount)
+            amount: totalAmount
           }
         ]
       };
 
-      console.log('Creating expense:', expenseData);
+      console.log('Creating expense with groupId:', groupId);
+      console.log('Creating expense data:', JSON.stringify(expenseData, null, 2));
       const result = await apiService.createExpense(expenseData);
-      console.log('Expense creation result:', result);
+      console.log('Expense creation result:', JSON.stringify(result, null, 2));
       
       if (result.success) {
+        console.log('Expense created successfully, navigating...');
         // Reset form
         setFormData({
           title: '',
@@ -170,35 +263,23 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
           category: '',
           description: '',
           date: new Date().toISOString().split('T')[0],
-          splitType: 'equal'
+          splitType: 'equal',
+          groupId: groupId || null
         });
         setSelectedMembers([]);
         setError('');
         
         // Show success and navigate
-        Alert.alert(
-          'Success!', 
-          'Expense added successfully!', 
-          [
-            { 
-              text: 'Add Another', 
-              style: 'cancel'
-            },
-            { 
-              text: 'Go to Dashboard', 
-              onPress: () => {
-                console.log('Navigating to dashboard...');
-                navigation.navigate('dashboard');
-              }
-            }
-          ]
-        );
+        const successMessage = groupId 
+          ? `Expense "${formData.title}" added to the group successfully!`
+          : `Personal expense "${formData.title}" added successfully!`;
         
-        // Also auto-navigate after 3 seconds if user doesn't choose
-        setTimeout(() => {
-          console.log('Auto-navigating to dashboard...');
-          navigation.navigate('dashboard');
-        }, 3000);
+        // Navigate back to groups list for proper refresh
+        navigation.navigate('success', {
+          message: successMessage,
+          nextScreen: groupId ? 'groups' : 'dashboard',
+          groupData: groupId ? groupData : undefined
+        });
       } else {
         console.error('Expense creation failed:', result.error);
         setError(result.error || 'Failed to create expense');
@@ -216,7 +297,7 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
   // };
 
   const splitAmount = formData.amount ? 
-    parseFloat(formData.amount) / (selectedMembers.length + 1) : 0;
+    Math.round((parseFloat(formData.amount) / (selectedMembers.length + 1)) * 100) / 100 : 0;
 
   // Filter users based on search query AND ensure current user is never shown
   const filteredUsers = users.filter((userItem: any) => {
@@ -246,7 +327,14 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
         <TouchableOpacity onPress={() => navigation.navigate('dashboard')} style={styles.backButton}>
           <ArrowLeft size={24} color="#374151" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Expense</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>
+            {groupId ? 'Add Group Expense' : 'Add Expense'}
+          </Text>
+          {groupId && groupData && (
+            <Text style={styles.headerSubtitle}>To "{groupData.name}"</Text>
+          )}
+        </View>
         <View style={styles.spacer} />
       </View>
 
@@ -328,15 +416,22 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
           <Card style={styles.card}>
             <Card.Content style={styles.cardContent}>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Split with Friends</Text>
-                <Text style={styles.sublabel}>Select who participated in this expense</Text>
+                <Text style={styles.label}>
+                  {groupId ? `Split with Group Members` : 'Split with Friends'}
+                </Text>
+                <Text style={styles.sublabel}>
+                  {groupId 
+                    ? `Select members from "${groupData?.name || 'this group'}" to split the expense with`
+                    : 'Select who participated in this expense'
+                  }
+                </Text>
                 
                 {/* Search Input */}
                 <TextInput
                   style={[styles.input, { marginTop: 8, marginBottom: 12 }]}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
-                  placeholder="Search friends by name or email..."
+                  placeholder={groupId ? "Search group members..." : "Search friends by name or email..."}
                   clearButtonMode="while-editing"
                 />
                 
@@ -374,14 +469,22 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
                   </View>
                 ) : (
                   <Text style={styles.noUsersText}>
-                    {searchQuery ? 'No users found matching your search.' : 'No other users found. You can still add a personal expense.'}
+                    {searchQuery 
+                      ? (groupId ? 'No group members found matching your search.' : 'No users found matching your search.')
+                      : (groupId 
+                          ? 'No other members in this group to split with.'
+                          : 'No other users found. You can still add a personal expense.'
+                        )
+                    }
                   </Text>
                 )}
 
                 {/* Split Summary */}
                 {selectedMembers.length > 0 && formData.amount && (
                   <View style={styles.splitSummary}>
-                    <Text style={styles.summaryText}>Split equally among {selectedMembers.length + 1} people</Text>
+                    <Text style={styles.summaryText}>
+                      Split equally among {selectedMembers.length + 1} {groupId ? 'group members' : 'people'}
+                    </Text>
                     <View style={styles.splitAmount}>
                       <Text style={styles.summaryText}>Each person pays:</Text>
                       <Text style={styles.amountText}>${splitAmount.toFixed(2)}</Text>
@@ -415,7 +518,7 @@ export function AddExpenseScreen({ navigation, user, showLoading }: AddExpenseSc
           contentStyle={styles.buttonContent}
           icon={() => <Shield size={16} color="#fff" />}
           loading={submitting}
-          disabled={submitting || !formData.title || !formData.amount || !formData.category}
+          disabled={submitting || !formData.title || !formData.amount}
         >
           {submitting ? 'Adding Expense...' : 'Add Secure Expense'}
         </Button>
@@ -428,7 +531,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   backButton: { padding: 8, marginLeft: -8 },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '600', color: '#1f2937' },
+  headerTitleContainer: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
+  headerSubtitle: { fontSize: 14, color: '#6b7280', marginTop: 2 },
   spacer: { width: 40 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingVertical: 16, paddingBottom: 100 },

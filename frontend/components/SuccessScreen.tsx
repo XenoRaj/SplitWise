@@ -6,8 +6,10 @@ import { RouteProp } from '@react-navigation/native';
 import { CheckCircle, Shield, ArrowRight } from 'lucide-react-native';
 
 type RootStackParamList = {
-  success: { message: string };
+  success: { message: string; nextScreen?: 'dashboard' | 'groups'; groupData?: any };
   dashboard: undefined;
+  groups: undefined;
+  'group-details': { group: any };
   // Add other screens...
 };
 
@@ -20,7 +22,25 @@ interface SuccessScreenProps {
 }
 
 export function SuccessScreen({ navigation, route }: SuccessScreenProps) {
-  const { message } = route.params;
+  const { message, nextScreen = 'dashboard', groupData } = route.params;
+
+  const handleContinue = () => {
+    if (nextScreen === 'groups') {
+      navigation.navigate('groups');
+    } else if (groupData) {
+      // If we have group data, go directly back to group details
+      navigation.navigate('group-details', { group: groupData });
+    } else {
+      navigation.navigate('dashboard');
+    }
+  };
+
+  const getButtonText = () => {
+    if (groupData) {
+      return `Back to ${groupData.name}`;
+    }
+    return nextScreen === 'groups' ? 'Go to Groups' : 'Continue to Dashboard';
+  };
 
   return (
     <View style={styles.container}>
@@ -48,15 +68,15 @@ export function SuccessScreen({ navigation, route }: SuccessScreenProps) {
       <View style={styles.actions}>
         <Button 
           mode="contained"
-          onPress={() => navigation.navigate('dashboard')}
+          onPress={handleContinue}
           style={styles.primaryButton}
           contentStyle={styles.buttonContent}
           icon={() => <ArrowRight size={16} color="#fff" />}
         >
-          Continue to Dashboard
+          {getButtonText()}
         </Button>
         
-        <TouchableOpacity style={styles.backLink}>
+        <TouchableOpacity style={styles.backLink} onPress={() => navigation.navigate('dashboard')}>
           <Text style={styles.backText}>Return to home</Text>
         </TouchableOpacity>
       </View>
