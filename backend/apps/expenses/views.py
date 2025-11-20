@@ -171,6 +171,69 @@ def confirm_settlement(request, settlement_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def group_balance_summary(request, group_id):
+    """Get user's balance summary for a specific group"""
+    user = request.user
+    
+    # Check if user is member of the group
+    from apps.groups.models import GroupMembership
+    membership = GroupMembership.objects.filter(
+        group_id=group_id, user=user, is_active=True
+    ).first()
+    
+    if not membership:
+        return Response(
+            {'error': 'You are not a member of this group'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Calculate balances from expense splits for this group
+    user_splits = ExpenseSplit.objects.filter(
+        user=user,
+        expense__group_id=group_id
+    ).select_related('expense')
+    
+    total_user_owes = 0  # What user owes to others
+    total_owed_to_user = 0  # What others owe to user
+    
+    # Group by who user owes money to
+    balances = defaultdict(Decimal)
+    
+    for split in user_splits:
+        expense = split.expense
+        if expense.paid_by != user:
+            # User owes money to the person who paid
+            balances[expense.paid_by.id] += split.amount
+            total_user_owes += float(split.amount)
+        else:
+            # User paid, others in this expense owe to user
+            other_splits = ExpenseSplit.objects.filter(
+                expense=expense
+            ).exclude(user=user)
+            
+            for other_split in other_splits:
+                balances[other_split.user.id] -= other_split.amount
+                total_owed_to_user += float(other_split.amount)
+    
+    # Calculate net balance (positive = others owe you, negative = you owe others)
+    net_balance = total_owed_to_user - total_user_owes
+    
+    # Get total group expenses
+    group_expenses = Expense.objects.filter(group_id=group_id)
+    total_group_expenses = sum(float(exp.amount) for exp in group_expenses)
+    
+    return Response({
+        'group_id': group_id,
+        'total_expenses': total_group_expenses,
+        'user_balance': net_balance,
+        'total_user_owes': total_user_owes,
+        'total_owed_to_user': total_owed_to_user,
+        'net_status': 'owed_to_you' if net_balance > 0 else 'you_owe' if net_balance < 0 else 'settled'
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def calculate_user_debts(request, group_id=None):
     """
     Calculate who owes whom in a specific group or across all groups
@@ -377,3 +440,177 @@ def user_settlement_history(request):
     ).order_by('-created_at')
     
     return Response(SettlementSerializer(settlements, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def settlement_summary(request):
+    """Get user's settlement summary - who owes what to whom"""
+    user = request.user
+    
+    # Calculate balances from expense splits
+    user_splits = ExpenseSplit.objects.filter(user=user).select_related('expense')
+    
+    # Group by other users to calculate net amounts
+    balances = defaultdict(Decimal)
+    
+    for split in user_splits:
+        expense = split.expense
+        if expense.paid_by != user:
+            # User owes money to the person who paid
+            balances[expense.paid_by.id] += split.amount
+        else:
+            # User paid, others owe to user
+            other_splits = ExpenseSplit.objects.filter(
+                expense=expense
+            ).exclude(user=user)
+            
+            for other_split in other_splits:
+                balances[other_split.user.id] -= other_split.amount
+    
+    # Convert to list format with user details
+    summary = []
+    for user_id, amount in balances.items():
+        if amount != 0:  # Only include non-zero balances
+            from apps.users.models import CustomUser
+            other_user = CustomUser.objects.get(id=user_id)
+            summary.append({
+                'user_id': user_id,
+                'user_name': other_user.get_full_name(),
+                'user_email': other_user.email,
+                'amount': float(amount),
+                'type': 'owes_to_them' if amount > 0 else 'owes_to_you'
+            })
+    
+    return Response({
+        'summary': summary,
+        'total_owed_by_you': sum(float(amt) for amt in balances.values() if amt > 0),
+        'total_owed_to_you': sum(float(abs(amt)) for amt in balances.values() if amt < 0)
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def process_payment(request):
+    """Process a payment (dummy implementation)"""
+    
+    # Extract payment data
+    receiver_id = request.data.get('receiver_id')
+    amount = request.data.get('amount')
+    payment_method = request.data.get('payment_method')
+    note = request.data.get('note', '')
+    
+    if not all([receiver_id, amount, payment_method]):
+        return Response({
+            'error': 'receiver_id, amount, and payment_method are required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            return Response({
+                'error': 'Amount must be positive'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Get receiver user
+        from apps.users.models import CustomUser
+        receiver = CustomUser.objects.get(id=receiver_id)
+        
+        # Simulate payment processing delay
+        import time
+        import random
+        
+        # Simulate different payment methods with different processing times
+        processing_time = {
+            'cash': 0.1,    # Instant for cash
+            'upi': 0.3,     # Fast UPI transaction
+            'venmo': 0.5,
+            'paypal': 0.8,
+            'bank': 1.2,
+            'zelle': 0.3
+        }.get(payment_method, 0.5)
+        
+        time.sleep(processing_time)
+        
+        # Simulate 95% success rate
+        if random.random() < 0.95:
+            # Create settlement record - but Settlement model requires group field
+            # For now, let's create a simpler response without database storage
+            # until we modify the Settlement model or create a separate Payment model
+            
+            import uuid
+            transaction_id = str(uuid.uuid4())[:12].upper()
+            
+            # Create a simple payment record and track payments made
+            from django.utils import timezone
+            from datetime import datetime
+            
+            # For now, let's update the expense splits to reflect the payment
+            # Find expenses where current user owes money to the receiver
+            user_splits = ExpenseSplit.objects.filter(
+                user=request.user,
+                expense__paid_by=receiver
+            ).select_related('expense')
+            
+            remaining_amount = amount
+            payments_made = []
+            
+            # Actually update the database - reduce split amounts
+            for split in user_splits:
+                if remaining_amount <= 0:
+                    break
+                    
+                # Calculate how much of this split we can pay
+                split_amount = min(remaining_amount, split.amount)
+                
+                # Update the split amount in database
+                split.amount -= split_amount
+                split.save()
+                
+                # Create a payment record
+                payments_made.append({
+                    'expense_id': split.expense.id,
+                    'expense_title': split.expense.title,
+                    'original_amount': float(split.amount + split_amount),
+                    'amount_paid': float(split_amount),
+                    'remaining_amount': float(split.amount)
+                })
+                
+                # Reduce the remaining amount
+                remaining_amount -= split_amount
+                
+                # If split is fully paid, it will now show 0 in future settlements
+                print(f"Updated split for expense {split.expense.title}: paid {split_amount}, remaining {split.amount}")
+            
+            return Response({
+                'success': True,
+                'transaction_id': transaction_id,
+                'amount': float(amount),
+                'receiver': receiver.get_full_name(),
+                'payment_method': payment_method,
+                'processing_time': int(processing_time * 1000),  # Convert to milliseconds
+                'processed_at': datetime.now().isoformat(),
+                'status': 'completed',
+                'payments_made': payments_made,
+                'note': note,
+                'message': f'Payment of ₹{amount} sent successfully to {receiver.get_full_name()} via {payment_method.title()}'
+            })
+        else:
+            # Simulate payment failure
+            return Response({
+                'success': False,
+                'error': 'Payment processing failed. Please try again.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except CustomUser.DoesNotExist:
+        return Response({
+            'error': 'Receiver not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except (ValueError, TypeError):
+        return Response({
+            'error': 'Invalid amount'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'error': f'Payment processing error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

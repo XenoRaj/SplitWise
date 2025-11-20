@@ -103,7 +103,7 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
       if (result.success) {
         console.log('Group expenses fetched:', result.data);
         setExpenses(result.data);
-        calculateGroupStats(result.data);
+        await calculateGroupStats(result.data);
       } else {
         console.error('Failed to fetch group expenses:', result.error);
         Alert.alert('Error', result.error);
@@ -117,25 +117,37 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
     }
   };
 
-  const calculateGroupStats = (expensesData: GroupExpense[]) => {
+  const calculateGroupStats = async (expensesData: GroupExpense[]) => {
     const totalExpenses = expensesData.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
     
-    // Calculate what user paid
-    const userPaid = expensesData
-      .filter(expense => expense.paid_by.id === user?.id)
-      .reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+    // Get real balance from backend API
+    const balanceResult = await apiService.getGroupBalanceSummary(group.id);
     
-    // For simplification, assuming equal split among members
-    // In real app, you'd calculate based on ExpenseSplit data
-    const userShare = totalExpenses / (group.member_count || 1);
-    const balance = userPaid - userShare;
-    
-    setGroupStats({
-      totalExpenses,
-      userBalance: balance,
-      userOwes: Math.max(0, -balance),
-      userOwed: Math.max(0, balance)
-    });
+    if (balanceResult.success) {
+      const balanceData = balanceResult.data;
+      setGroupStats({
+        totalExpenses: balanceData.total_expenses,
+        userBalance: balanceData.user_balance,
+        userOwes: balanceData.total_user_owes,
+        userOwed: balanceData.total_owed_to_user
+      });
+    } else {
+      // Fallback to simple calculation if API fails
+      console.warn('Failed to get group balance, using fallback calculation');
+      const userPaid = expensesData
+        .filter(expense => expense.paid_by.id === user?.id)
+        .reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+      
+      const userShare = totalExpenses / (group.member_count || 1);
+      const balance = userPaid - userShare;
+      
+      setGroupStats({
+        totalExpenses,
+        userBalance: balance,
+        userOwes: Math.max(0, -balance),
+        userOwed: Math.max(0, balance)
+      });
+    }
   };
 
   const getStatusIcon = (status: GroupExpense['status']) => {
@@ -225,7 +237,7 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
               <DollarSign size={16} color="#6b7280" />
             </View>
             <Text style={styles.statLabel}>Total Expenses</Text>
-            <Text style={styles.statValue}>${groupStats.totalExpenses.toFixed(2)}</Text>
+            <Text style={styles.statValue}>₹{groupStats.totalExpenses.toFixed(2)}</Text>
           </View>
           <View style={styles.statItem}>
             <View style={styles.statIcon}>
@@ -233,7 +245,7 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
             </View>
             <Text style={styles.statLabel}>Your Balance</Text>
             <Text style={[styles.statValue, { color: groupStats.userBalance >= 0 ? '#16a34a' : '#dc2626' }]}>
-              ${Math.abs(groupStats.userBalance).toFixed(2)} {groupStats.userBalance >= 0 ? 'owed to you' : 'you owe'}
+              ₹{Math.abs(groupStats.userBalance).toFixed(2)} {groupStats.userBalance >= 0 ? 'owed to you' : 'you owe'}
             </Text>
           </View>
         </View>

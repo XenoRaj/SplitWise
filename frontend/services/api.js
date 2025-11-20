@@ -498,6 +498,122 @@ export const apiService = {
       };
     }
   },
+
+  // ===== SETTLEMENT/PAYMENT API =====
+
+  // Get user's settlement summary
+  getSettlementSummary: async () => {
+    try {
+      const response = await api.get('/expenses/settlements/summary/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get settlement summary failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get settlement summary' 
+      };
+    }
+  },
+
+  // Create a new settlement/payment
+  createSettlement: async (settlementData) => {
+    try {
+      const response = await api.post('/expenses/settlements/', settlementData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Create settlement failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to create settlement' 
+      };
+    }
+  },
+
+  // Process payment (dummy payment processor)
+  processPayment: async (paymentData) => {
+    try {
+      console.log('Sending payment request:', paymentData);
+      const response = await api.post('/expenses/settlements/process-payment/', paymentData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Process payment failed:', error);
+      console.error('Error response data:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      
+      // Get detailed error message
+      let errorMessage = 'Payment processing failed';
+      if (error.response?.data) {
+        if (error.response.data.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.response.data.detail) {
+          errorMessage = error.response.data.detail;
+        } else if (typeof error.response.data === 'string') {
+          errorMessage = error.response.data;
+        }
+      }
+      
+      return { 
+        success: false, 
+        error: errorMessage
+      };
+    }
+  },
+
+  // Get settlement history
+  getSettlementHistory: async () => {
+    try {
+      const response = await api.get('/expenses/settlements/');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get settlement history failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get settlement history' 
+      };
+    }
+  },
+
+  // Get expense details for individual settlement
+  getExpenseDetails: async (expenseId) => {
+    try {
+      const response = await api.get(`/expenses/${expenseId}/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get expense details failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get expense details' 
+      };
+    }
+  },
+
+  // Get group-specific settlement summary
+  getGroupSettlementSummary: async (groupId) => {
+    try {
+      const response = await api.get(`/groups/${groupId}/settlements/summary/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get group settlement summary failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get group settlement summary' 
+      };
+    }
+  },
+
+  // Get group balance summary (actual database calculations)
+  getGroupBalanceSummary: async (groupId) => {
+    try {
+      const response = await api.get(`/expenses/groups/${groupId}/balance/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get group balance summary failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get group balance summary' 
+      };
+    }
+  },
 };
 
 export default api;

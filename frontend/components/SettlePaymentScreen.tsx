@@ -1,19 +1,25 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Alert } from 'react-native';
 import { Button, Card, Avatar } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { ArrowLeft, Shield, CreditCard, Lock, Smartphone, CheckCircle } from 'lucide-react-native';
+import { apiService } from '../services/api';
+import { authStorage } from '../services/authStorage';
 
 type RootStackParamList = {
-  settlePayment: undefined;
+  'settle-payment': { 
+    settlementType: 'individual' | 'group';
+    expenseId?: number;
+    groupId?: number;
+  };
   dashboard: undefined;
   success: { message: string };
   // Add other screens...
 };
 
-type SettlePaymentScreenNavigationProp = StackNavigationProp<RootStackParamList, 'settlePayment'>;
-type SettlePaymentScreenRouteProp = RouteProp<RootStackParamList, 'settlePayment'>;
+type SettlePaymentScreenNavigationProp = StackNavigationProp<RootStackParamList, 'settle-payment'>;
+type SettlePaymentScreenRouteProp = RouteProp<RootStackParamList, 'settle-payment'>;
 
 interface SettlePaymentScreenProps {
   navigation: SettlePaymentScreenNavigationProp;
@@ -21,27 +27,130 @@ interface SettlePaymentScreenProps {
   showLoading: (callback: () => void) => void;
 }
 
-export function SettlePaymentScreen({ navigation, showLoading }: SettlePaymentScreenProps) {
+export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePaymentScreenProps) {
   const [paymentData, setPaymentData] = useState({
     recipient: '',
     amount: '',
     paymentMethod: '',
     note: ''
   });
-  const [step, setStep] = useState(1); // 1: Details, 2: Payment Method, 3: Confirmation
+  
+  // Get settlement context from route params
+  const { settlementType = 'group', expenseId, groupId } = route.params || {};
 
-  const recipients = [
-    { id: '1', name: 'Sarah Chen', balance: 15.50 },
-    { id: '2', name: 'Mike Wilson', balance: 8.25 },
-    { id: '3', name: 'Emily Davis', balance: 22.75 }
-  ];
+  // Helper function to get current user ID from auth storage
+  const getCurrentUserId = async () => {
+    try {
+      const userData = await authStorage.getUserData();
+      return userData?.id || null;
+    } catch (error) {
+      console.error('Error getting user ID:', error);
+      return null;
+    }
+  };
+  const [step, setStep] = useState(1); // 1: Details, 2: Payment Method, 3: Confirmation, 4: Processing, 5: Success
+  const [recipients, setRecipients] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [paymentResult, setPaymentResult] = useState(null);
 
   const paymentMethods = [
-    { id: 'venmo', name: 'Venmo', icon: '📱' },
-    { id: 'paypal', name: 'PayPal', icon: '💙' },
-    { id: 'bank', name: 'Bank Transfer', icon: '🏦' },
-    { id: 'zelle', name: 'Zelle', icon: '⚡' }
+    { id: 'cash', name: 'Cash', icon: '💵' },
+    { id: 'upi', name: 'UPI', icon: '📱' }
   ];
+
+  // Fetch settlement summary when component mounts
+  useEffect(() => {
+    fetchSettlementData();
+  }, []);
+
+  const fetchSettlementData = async () => {
+    setLoading(true);
+    
+    if (settlementType === 'individual' && expenseId) {
+      // For individual expense settlement, fetch specific expense details
+      const result = await apiService.getExpenseDetails(expenseId);
+      setLoading(false);
+      
+      if (result.success) {
+        const expense = result.data;
+        // Get the expense creator (person who paid)
+        const creator = expense.paid_by;
+        
+        // Get current user ID
+        const currentUserId = await getCurrentUserId();
+        
+        // If current user is not the creator, show creator as recipient (you owe them)
+        // If current user is the creator, show split members who owe you money
+        if (creator && creator.id !== currentUserId) {
+          // Current user owes money to the expense creator
+          // Find current user's split to get the exact amount they owe
+          const currentUserSplit = expense.expense_splits?.find(split => 
+            split.user.id === currentUserId
+          );
+          const amountOwed = currentUserSplit ? 
+            parseFloat(currentUserSplit.amount || 0) : 
+            parseFloat(expense.amount) / (expense.expense_splits?.length || 1);
+            
+          setRecipients([{
+            user_id: creator.id,
+            name: creator.name || creator.username || creator.email,
+            balance: amountOwed,
+            type: 'owes_to_them',
+            actionType: 'pay' // Current user is paying money
+          }]);
+        } else {
+          // Current user is the creator - others owe money to current user
+          // Use the actual expense splits data to show who owes what
+          const splitMembers = expense.expense_splits?.filter(split => 
+            split.user.id !== currentUserId // Don't show current user
+          ).map(split => ({
+            user_id: split.user.id,
+            name: split.user.name || split.user.username || split.user.email,
+            balance: parseFloat(split.amount || 0),
+            type: 'owes_to_you', // They owe money to current user
+            actionType: 'collect' // Current user is collecting money
+          })) || [];
+          
+          setRecipients(splitMembers);
+        }
+      } else {
+        Alert.alert('Error', result.error);
+      }
+    } else if (settlementType === 'group' && groupId) {
+      // For group settlement, get all group members you owe money to
+      const result = await apiService.getGroupSettlementSummary(groupId);
+      setLoading(false);
+      
+      if (result.success) {
+        const owesTo = result.data.summary.filter(item => item.type === 'owes_to_them');
+        setRecipients(owesTo);
+      } else {
+        Alert.alert('Error', result.error);
+      }
+    } else {
+      // Default: get all settlement data
+      const result = await apiService.getSettlementSummary();
+      setLoading(false);
+      
+      if (result.success) {
+        // Show people who owe YOU money (for collection)
+        // AND people you owe money to (for payment)
+        // But since this is a "settle payment" screen, prioritize collections
+        const owesToYou = result.data.summary.filter(item => item.type === 'owes_to_you');
+        const youOweTo = result.data.summary.filter(item => item.type === 'owes_to_them');
+        
+        // Show collections first (people who owe you), then payments (people you owe)
+        const allRecipients = [
+          ...owesToYou.map(item => ({ ...item, actionType: 'collect' })),
+          ...youOweTo.map(item => ({ ...item, actionType: 'pay' }))
+        ];
+        
+        setRecipients(allRecipients);
+      } else {
+        Alert.alert('Error', result.error);
+      }
+    }
+  };
 
   const handleNext = () => {
     if (step === 1 && paymentData.recipient && paymentData.amount) {
@@ -51,17 +160,114 @@ export function SettlePaymentScreen({ navigation, showLoading }: SettlePaymentSc
     }
   };
 
-  const handleConfirmPayment = () => {
-    showLoading(() => {
-      navigation.navigate('success', { 
-        message: 'Payment processed successfully! Your balance has been updated.' 
-      });
-    });
+  const handlePayment = async () => {
+    setStep(4); // Processing step
+    
+    const selectedRecipient = recipients.find(r => r.user_id.toString() === paymentData.recipient);
+    
+    const paymentRequest = {
+      receiver_id: parseInt(paymentData.recipient),
+      amount: parseFloat(paymentData.amount),
+      payment_method: paymentData.paymentMethod,
+      note: paymentData.note || ''
+    };
+    
+    console.log('Processing payment with data:', paymentRequest);
+    console.log('Selected recipient:', selectedRecipient);
+    
+    // Validate required fields
+    if (!paymentRequest.receiver_id || !paymentRequest.amount || !paymentRequest.payment_method) {
+      Alert.alert('Payment Failed', 'Missing required payment information');
+      setStep(3);
+      return;
+    }
+    
+    const result = await apiService.processPayment(paymentRequest);
+    
+    if (result.success) {
+      setPaymentResult(result.data);
+      setStep(5); // Success step
+    } else {
+      console.log('Payment failed with error:', result.error);
+      Alert.alert('Payment Failed', result.error || 'Unknown error occurred');
+      setStep(3); // Back to confirmation
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    await handlePayment();
   };
 
   const updatePaymentData = (field: string, value: string) => {
     setPaymentData(prev => ({ ...prev, [field]: value }));
   };
+
+  const renderProcessing = () => (
+    <View style={styles.stepContent}>
+      <Card style={styles.card}>
+        <Card.Content style={styles.cardContent}>
+          <View style={styles.processingContainer}>
+            <View style={styles.loadingIcon}>
+              {/* Add loading spinner here if needed */}
+              <Text style={styles.loadingEmoji}>⏳</Text>
+            </View>
+            <Text style={styles.processingTitle}>Processing Payment</Text>
+            <Text style={styles.processingSubtitle}>
+              Securely processing your payment of ₹{parseFloat(paymentData.amount || '0').toFixed(2)}
+            </Text>
+            <Text style={styles.processingNote}>Please do not close this screen</Text>
+          </View>
+        </Card.Content>
+      </Card>
+    </View>
+  );
+
+  const renderSuccess = () => (
+    <View style={styles.stepContent}>
+      <Card style={styles.card}>
+        <Card.Content style={styles.cardContent}>
+          <View style={styles.successContainer}>
+            <View style={styles.successIcon}>
+              <CheckCircle size={64} color="#16a34a" />
+            </View>
+            <Text style={styles.successTitle}>Payment Successful!</Text>
+            <Text style={styles.successSubtitle}>
+              ₹{parseFloat(paymentData.amount || '0').toFixed(2)} has been sent to {selectedRecipient?.name}
+            </Text>
+            
+            {paymentResult && (
+              <View style={styles.transactionDetails}>
+                <Text style={styles.transactionTitle}>Transaction Details</Text>
+                <View style={styles.transactionItem}>
+                  <Text style={styles.transactionLabel}>Transaction ID</Text>
+                  <Text style={styles.transactionValue}>{paymentResult.transaction_id}</Text>
+                </View>
+                <View style={styles.transactionItem}>
+                  <Text style={styles.transactionLabel}>Processing Time</Text>
+                  <Text style={styles.transactionValue}>{paymentResult.processing_time}ms</Text>
+                </View>
+                <View style={styles.transactionItem}>
+                  <Text style={styles.transactionLabel}>Status</Text>
+                  <Text style={[styles.transactionValue, styles.successStatus]}>
+                    {paymentResult.status}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </Card.Content>
+      </Card>
+      
+      <Button 
+        mode="contained"
+        onPress={() => navigation.navigate('dashboard')}
+        style={styles.primaryButton}
+        contentStyle={styles.buttonContent}
+      >
+        Return to Dashboard
+      </Button>
+    </View>
+  );
 
   const selectedRecipient = recipients.find(r => r.id === paymentData.recipient);
 
@@ -72,7 +278,9 @@ export function SettlePaymentScreen({ navigation, showLoading }: SettlePaymentSc
         <TouchableOpacity onPress={() => step === 1 ? navigation.navigate('dashboard') : setStep(step - 1)} style={styles.backButton}>
           <ArrowLeft size={24} color="#374151" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settle Payment</Text>
+        <Text style={styles.headerTitle}>
+          {settlementType === 'individual' ? 'Settle Expense' : 'Settle Payment'}
+        </Text>
         <View style={styles.spacer} />
         <View style={styles.stepIndicator}>
           {[1, 2, 3].map((i) => (
@@ -96,44 +304,102 @@ export function SettlePaymentScreen({ navigation, showLoading }: SettlePaymentSc
                 </View>
                 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Pay to</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={paymentData.recipient}
-                    onChangeText={(value) => updatePaymentData('recipient', value)}
-                    placeholder="Select recipient"
-                  />
-                  {/* In a real app, use a proper picker */}
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Amount</Text>
-                  <TextInput
-                    style={styles.input}
-                    keyboardType="numeric"
-                    value={paymentData.amount}
-                    onChangeText={(value) => updatePaymentData('amount', value)}
-                    placeholder="0.00"
-                  />
-                  {selectedRecipient && (
-                    <TouchableOpacity 
-                      style={styles.fullAmountButton}
-                      onPress={() => updatePaymentData('amount', selectedRecipient.balance.toString())}
-                    >
-                      <Text style={styles.fullAmountText}>Pay full amount (${selectedRecipient.balance.toFixed(2)})</Text>
-                    </TouchableOpacity>
+                  <Text style={styles.label}>
+                    {recipients.length > 0 && recipients[0]?.actionType === 'collect' 
+                      ? 'Collect from' 
+                      : settlementType === 'individual' ? 'Pay to' : 'Select recipient'}
+                  </Text>
+                  
+                  {loading ? (
+                    <Text style={styles.loadingText}>Loading recipients...</Text>
+                  ) : (
+                    <View style={styles.recipientsList}>
+                      {recipients.map((recipient) => (
+                        <TouchableOpacity
+                          key={recipient.user_id}
+                          style={[
+                            styles.recipientItem,
+                            paymentData.recipient === recipient.user_id.toString() && styles.recipientSelected
+                          ]}
+                          onPress={() => updatePaymentData('recipient', recipient.user_id.toString())}
+                        >
+                          <Avatar.Text 
+                            size={40} 
+                            label={recipient.name ? recipient.name.split(' ').map(n => n[0]).join('') : 'U'} 
+                          />
+                          <View style={styles.recipientInfo}>
+                            <Text style={styles.recipientName}>{recipient.name}</Text>
+                            <Text style={styles.recipientBalance}>
+                              {recipient.actionType === 'collect' || recipient.type === 'owes_to_you'
+                                ? `Owes you: ₹${Math.abs(recipient.balance).toFixed(2)}`
+                                : `You owe: ₹${recipient.balance.toFixed(2)}`
+                              }
+                            </Text>
+                          </View>
+                          {paymentData.recipient === recipient.user_id.toString() && (
+                            <CheckCircle size={20} color="#3b82f6" />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                      
+                      {recipients.length === 0 && !loading && (
+                        <Text style={styles.noRecipientsText}>
+                          {settlementType === 'individual' 
+                            ? 'No one to pay for this expense' 
+                            : 'All balances are settled'}
+                        </Text>
+                      )}
+                      
+                      {recipients.length > 0 && !loading && 
+                       recipients.every(r => r.actionType === 'collect' || r.type === 'owes_to_you') && (
+                        <View style={styles.noPaymentsNeeded}>
+                          <CheckCircle size={48} color="#16a34a" />
+                          <Text style={styles.noPaymentsTitle}>Great news!</Text>
+                          <Text style={styles.noPaymentsSubtitle}>
+                            You don't need to pay anyone. People owe you money instead!
+                          </Text>
+                          <Text style={styles.noPaymentsHint}>
+                            Others can pay you using their settlement screens.
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   )}
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Note (Optional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={paymentData.note}
-                    onChangeText={(value) => updatePaymentData('note', value)}
-                    placeholder="Payment for..."
-                  />
-                </View>
+                {/* Only show amount and note fields if there are people to pay */}
+                {recipients.some(r => r.actionType === 'pay' || r.type === 'owes_to_them') && (
+                  <>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Amount</Text>
+                      <TextInput
+                        style={styles.input}
+                        keyboardType="numeric"
+                        value={paymentData.amount}
+                        onChangeText={(value) => updatePaymentData('amount', value)}
+                        placeholder="0.00"
+                      />
+                      {selectedRecipient && (
+                        <TouchableOpacity 
+                          style={styles.fullAmountButton}
+                          onPress={() => updatePaymentData('amount', selectedRecipient.balance.toString())}
+                        >
+                          <Text style={styles.fullAmountText}>Pay full amount (₹{selectedRecipient.balance.toFixed(2)})</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Note (Optional)</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={paymentData.note}
+                        onChangeText={(value) => updatePaymentData('note', value)}
+                        placeholder="Payment for..."
+                      />
+                    </View>
+                  </>
+                )}
               </Card.Content>
             </Card>
 
@@ -223,7 +489,7 @@ export function SettlePaymentScreen({ navigation, showLoading }: SettlePaymentSc
                   
                   <View style={styles.confirmationItem}>
                     <Text style={styles.confirmationLabel}>Amount</Text>
-                    <Text style={styles.confirmationAmount}>${parseFloat(paymentData.amount || '0').toFixed(2)}</Text>
+                    <Text style={styles.confirmationAmount}>₹{parseFloat(paymentData.amount || '0').toFixed(2)}</Text>
                   </View>
                   
                   <View style={styles.confirmationItem}>
@@ -242,7 +508,7 @@ export function SettlePaymentScreen({ navigation, showLoading }: SettlePaymentSc
                   
                   <View style={styles.confirmationItem}>
                     <Text style={styles.confirmationLabel}>Processing Fee</Text>
-                    <Text style={styles.confirmationText}>$0.00</Text>
+                    <Text style={styles.confirmationText}>₹0.00</Text>
                   </View>
                 </View>
               </Card.Content>
@@ -255,24 +521,32 @@ export function SettlePaymentScreen({ navigation, showLoading }: SettlePaymentSc
             </View>
           </View>
         )}
+
+        {/* Step 4: Processing */}
+        {step === 4 && renderProcessing()}
+
+        {/* Step 5: Success */}
+        {step === 5 && renderSuccess()}
       </ScrollView>
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        <Button 
-          mode="contained"
-          onPress={step === 3 ? handleConfirmPayment : handleNext}
-          disabled={
-            (step === 1 && (!paymentData.recipient || !paymentData.amount)) ||
-            (step === 2 && !paymentData.paymentMethod)
-          }
-          style={styles.primaryButton}
-          contentStyle={styles.buttonContent}
-          icon={() => <Lock size={16} color="#fff" />}
-        >
-          {step === 3 ? 'Confirm Payment' : 'Continue'}
-        </Button>
-      </View>
+      {/* Footer - Hide during processing, success, and when only collections available */}
+      {step < 4 && recipients.some(r => r.actionType === 'pay' || r.type === 'owes_to_them') && (
+        <View style={styles.footer}>
+          <Button 
+            mode="contained"
+            onPress={step === 3 ? handleConfirmPayment : handleNext}
+            disabled={
+              (step === 1 && (!paymentData.recipient || !paymentData.amount)) ||
+              (step === 2 && !paymentData.paymentMethod)
+            }
+            style={styles.primaryButton}
+            contentStyle={styles.buttonContent}
+            icon={() => <Lock size={16} color="#fff" />}
+          >
+            {step === 3 ? 'Confirm Payment' : 'Continue'}
+          </Button>
+        </View>
+      )}
     </View>
   );
 }
@@ -324,6 +598,64 @@ const styles = StyleSheet.create({
   confirmationAmount: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
   finalSecurity: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#eff6ff', borderRadius: 8 },
   finalSecurityText: { fontSize: 14, color: '#3b82f6', marginLeft: 8 },
+  processingContainer: { alignItems: 'center', paddingVertical: 32 },
+  loadingIcon: { marginBottom: 16 },
+  loadingEmoji: { fontSize: 48, textAlign: 'center' },
+  processingTitle: { fontSize: 20, fontWeight: '600', color: '#1f2937', marginBottom: 8, textAlign: 'center' },
+  processingSubtitle: { fontSize: 16, color: '#6b7280', textAlign: 'center', marginBottom: 16 },
+  processingNote: { fontSize: 14, color: '#9ca3af', textAlign: 'center' },
+  successContainer: { alignItems: 'center', paddingVertical: 32 },
+  successIcon: { marginBottom: 16 },
+  successTitle: { fontSize: 24, fontWeight: '700', color: '#16a34a', marginBottom: 8, textAlign: 'center' },
+  successSubtitle: { fontSize: 16, color: '#6b7280', textAlign: 'center', marginBottom: 24 },
+  transactionDetails: { width: '100%', backgroundColor: '#f9fafb', padding: 16, borderRadius: 8 },
+  transactionTitle: { fontSize: 16, fontWeight: '600', color: '#1f2937', marginBottom: 12 },
+  transactionItem: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  transactionLabel: { fontSize: 14, color: '#6b7280' },
+  transactionValue: { fontSize: 14, color: '#1f2937', fontWeight: '500' },
+  successStatus: { color: '#16a34a', fontWeight: '600' },
+  loadingText: { fontSize: 14, color: '#6b7280', textAlign: 'center', padding: 16 },
+  recipientsList: { gap: 8 },
+  recipientItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 12, 
+    borderWidth: 1, 
+    borderColor: '#d1d5db', 
+    borderRadius: 8, 
+    backgroundColor: '#fff' 
+  },
+  recipientSelected: { borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
+  recipientInfo: { flex: 1, marginLeft: 12 },
+  recipientName: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
+  recipientBalance: { fontSize: 14, color: '#6b7280' },
+  noRecipientsText: { fontSize: 14, color: '#6b7280', textAlign: 'center', padding: 16 },
+  noPaymentsNeeded: { 
+    alignItems: 'center', 
+    padding: 32, 
+    backgroundColor: '#f0fdf4', 
+    borderRadius: 12, 
+    marginVertical: 16 
+  },
+  noPaymentsTitle: { 
+    fontSize: 20, 
+    fontWeight: '700', 
+    color: '#16a34a', 
+    marginTop: 12, 
+    marginBottom: 8 
+  },
+  noPaymentsSubtitle: { 
+    fontSize: 16, 
+    color: '#15803d', 
+    textAlign: 'center', 
+    marginBottom: 8 
+  },
+  noPaymentsHint: { 
+    fontSize: 14, 
+    color: '#16a34a', 
+    textAlign: 'center', 
+    opacity: 0.8 
+  },
   footer: { paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e5e7eb' },
   primaryButton: { backgroundColor: '#3b82f6' },
   buttonContent: { height: 48 },

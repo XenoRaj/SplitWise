@@ -36,7 +36,11 @@ type RootStackParamList = {
   groups: undefined;
   profile: undefined;
   'expense-details': { expense: Expense };
-  'settle-payment': undefined;
+  'settle-payment': { 
+    settlementType: 'individual' | 'group';
+    expenseId?: number;
+    groupId?: number;
+  };
   // Add other screens...
 };
 
@@ -230,7 +234,9 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
           </Button>
           <Button
             mode="outlined"
-            onPress={() => navigation.navigate('settle-payment')}
+            onPress={() => navigation.navigate('settle-payment', {
+              settlementType: 'group'
+            })}
             style={styles.actionButton}
             contentStyle={styles.actionButtonContent}
             icon={() => <CreditCard size={20} color="#3b82f6" />}

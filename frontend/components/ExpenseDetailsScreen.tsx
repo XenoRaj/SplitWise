@@ -9,7 +9,11 @@ import type { Expense } from '../App';
 type RootStackParamList = {
   expenseDetails: { expense: Expense };
   dashboard: undefined;
-  settlePayment: undefined;
+  'settle-payment': { 
+    settlementType: 'individual' | 'group';
+    expenseId?: number;
+    groupId?: number;
+  };
   // Add other screens...
 };
 
@@ -38,7 +42,11 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
   };
 
   const handleSettle = () => {
-    navigation.navigate('settlePayment');
+    navigation.navigate('settle-payment', {
+      settlementType: 'individual',
+      expenseId: expense.id,
+      groupId: expense.group_id
+    });
   };
 
   return (
