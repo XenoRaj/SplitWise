@@ -96,9 +96,29 @@ export const apiService = {
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Login failed:', error);
+      
+      let errorMessage = 'Login failed. Please check your credentials.';
+      if (error.response?.data) {
+        const errorData = error.response.data;
+        // Handle DRF's standard "detail" error
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } 
+        // Handle cases where the error is an object of field errors
+        else if (typeof errorData === 'object' && errorData !== null) {
+          // Join multiple error messages if they exist
+          const messages = Object.values(errorData).flat();
+          if (messages.length > 0) {
+            errorMessage = messages.join(' ');
+          }
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       return { 
         success: false, 
-        error: error.response?.data?.detail || error.message || 'Login failed' 
+        error: errorMessage
       };
     }
   },
@@ -408,6 +428,72 @@ export const apiService = {
                JSON.stringify(error.response?.data) || 
                error.message || 
                'Failed to create expense' 
+      };
+    }
+  },
+
+  // ===== PASSWORD RESET API =====
+
+  // Request password reset OTP
+  requestPasswordReset: async (email) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/auth/password-reset/`, {
+        email,
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Password reset request failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.message || 'Failed to request password reset' 
+      };
+    }
+  },
+
+  // Verify password reset OTP
+  verifyPasswordResetOTP: async (email, otp) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/auth/verify-password-reset-otp/`, {
+        email,
+        otp,
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Password reset OTP verification failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.message || 'Invalid OTP' 
+      };
+    }
+  },
+
+  // Reset password with OTP
+  resetPassword: async (email, otp, newPassword, confirmPassword) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/auth/reset-password/`, {
+        email,
+        otp,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Password reset failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.message || 'Failed to reset password' 
       };
     }
   },
