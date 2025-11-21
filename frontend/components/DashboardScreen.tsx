@@ -36,10 +36,13 @@ type RootStackParamList = {
   groups: undefined;
   profile: undefined;
   'expense-details': { expense: Expense };
+  'global-settle-up': undefined;
   'settle-payment': { 
-    settlementType: 'individual' | 'group';
+    settlementType: 'individual' | 'group' | 'global';
     expenseId?: number;
     groupId?: number;
+    recipientId?: number;
+    amount?: number;
   };
   // Add other screens...
 };
@@ -197,22 +200,22 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
             <View style={styles.balanceGrid}>
               <View style={styles.balanceItem}>
                 <View style={styles.balanceIcon}>
-                  <ArrowDownLeft size={16} color="#dc2626" />
+                  <ArrowDownLeft size={16} color="#ff6b6b" />
                 </View>
                 <Text style={styles.balanceLabel}>You owe</Text>
-                <Text style={styles.balanceAmount}>${totalOwed.toFixed(2)}</Text>
+                <Text style={styles.balanceAmountRed}>${totalOwed.toFixed(2)}</Text>
               </View>
               <View style={styles.balanceItem}>
                 <View style={styles.balanceIcon}>
-                  <ArrowUpRight size={16} color="#16a34a" />
+                  <ArrowUpRight size={16} color="#51cf66" />
                 </View>
                 <Text style={styles.balanceLabel}>You're owed</Text>
-                <Text style={styles.balanceAmount}>${totalOwing.toFixed(2)}</Text>
+                <Text style={styles.balanceAmountGreen}>${totalOwing.toFixed(2)}</Text>
               </View>
             </View>
             <View style={styles.netBalance}>
               <Text style={styles.netLabel}>Net Balance</Text>
-              <Text style={[styles.netAmount, { color: netBalance < 0 ? '#dc2626' : '#16a34a' }]}>
+              <Text style={[styles.netAmount, { color: netBalance < 0 ? '#ff6b6b' : '#51cf66' }]}>
                 ${Math.abs(parseFloat(netBalance.toFixed(2)))} {netBalance < 0 ? 'owed' : 'owing'}
               </Text>
             </View>
@@ -234,9 +237,7 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
           </Button>
           <Button
             mode="outlined"
-            onPress={() => navigation.navigate('settle-payment', {
-              settlementType: 'group'
-            })}
+            onPress={() => navigation.navigate('global-settle-up')}
             style={styles.actionButton}
             contentStyle={styles.actionButtonContent}
             icon={() => <CreditCard size={20} color="#3b82f6" />}
@@ -349,6 +350,8 @@ const styles = StyleSheet.create({
   balanceIcon: { marginBottom: 4 },
   balanceLabel: { fontSize: 12, color: '#bfdbfe', marginBottom: 4 },
   balanceAmount: { fontSize: 20, fontWeight: '700', color: '#fff' },
+  balanceAmountRed: { fontSize: 20, fontWeight: '700', color: '#ff6b6b' },
+  balanceAmountGreen: { fontSize: 20, fontWeight: '700', color: '#51cf66' },
   netBalance: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: '#3b82f6' },
   netLabel: { fontSize: 14, color: '#bfdbfe' },
   netAmount: { fontSize: 16, fontWeight: '600' },

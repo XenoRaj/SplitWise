@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Alert } from 'react-native';
-import { Button, Card, Avatar, Checkbox, Chip } from 'react-native-paper';
+import { Button, Card, Avatar, Chip } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp, useRoute } from '@react-navigation/native';
-import { ArrowLeft, Shield, Camera, Users, DollarSign } from 'lucide-react-native';
+import { ArrowLeft, Shield, Camera, Users, DollarSign, CheckCircle, Circle } from 'lucide-react-native';
 import { apiService } from '../services/api';
 import type { User } from '../App';
 
@@ -425,6 +425,36 @@ export function AddExpenseScreen({ navigation, route, user, showLoading }: AddEx
                     : 'Select who participated in this expense'
                   }
                 </Text>
+
+                {/* Selected Members Display */}
+                {selectedMembers.length > 0 && (
+                  <View style={styles.selectedMembersContainer}>
+                    <Text style={styles.selectedMembersTitle}>Selected Members:</Text>
+                    <View style={styles.selectedMembersTags}>
+                      <Chip 
+                        style={styles.selectedMemberChip}
+                        textStyle={styles.selectedMemberChipText}
+                        onClose={() => toggleUserSelection(currentUser?.id)}
+                        disabled
+                      >
+                        {currentUser?.first_name || currentUser?.email} (You)
+                      </Chip>
+                      {selectedMembers.map((memberId) => {
+                        const user = users.find(u => u.id.toString() === memberId);
+                        return user ? (
+                          <Chip 
+                            key={user.id}
+                            style={styles.selectedMemberChip}
+                            textStyle={styles.selectedMemberChipText}
+                            onClose={() => toggleUserSelection(user.id)}
+                          >
+                            {user.first_name || user.email.split('@')[0]}
+                          </Chip>
+                        ) : null;
+                      })}
+                    </View>
+                  </View>
+                )}
                 
                 {/* Search Input */}
                 <TextInput
@@ -442,6 +472,7 @@ export function AddExpenseScreen({ navigation, route, user, showLoading }: AddEx
                         key={user.id}
                         style={styles.userItem}
                         onPress={() => toggleUserSelection(user.id)}
+                        activeOpacity={0.7}
                       >
                         <View style={styles.userInfo}>
                           <Avatar.Text 
@@ -459,11 +490,13 @@ export function AddExpenseScreen({ navigation, route, user, showLoading }: AddEx
                             <Text style={styles.userEmail}>{user.email}</Text>
                           </View>
                         </View>
-                        <Checkbox
-                          status={selectedMembers.includes(user.id.toString()) ? 'checked' : 'unchecked'}
-                          onPress={() => toggleUserSelection(user.id)}
-                          color="#3b82f6"
-                        />
+                        <View style={styles.checkboxContainer}>
+                          {selectedMembers.includes(user.id.toString()) ? (
+                            <CheckCircle size={24} color="#3b82f6" strokeWidth={2} />
+                          ) : (
+                            <Circle size={24} color="#d1d5db" strokeWidth={2} />
+                          )}
+                        </View>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -572,13 +605,30 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   loadingText: { fontSize: 16, color: '#6b7280', marginTop: 16 },
   sublabel: { fontSize: 14, color: '#6b7280', marginBottom: 12 },
-  usersList: { gap: 12, marginTop: 8 },
-  userItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#f9fafb', borderRadius: 8 },
-  userInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  usersList: { gap: 12, marginTop: 8, paddingBottom: 16 },
+  userItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    padding: 16, 
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginBottom: 8
+  },
+  userInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
   userAvatar: { backgroundColor: '#3b82f6', marginRight: 12 },
   userDetails: { flex: 1 },
   userName: { fontSize: 16, fontWeight: '500', color: '#1f2937' },
   userEmail: { fontSize: 14, color: '#6b7280', marginTop: 2 },
+  checkboxContainer: { 
+    width: 50, 
+    height: 50, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    paddingLeft: 8
+  },
   noUsersText: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginTop: 16, fontStyle: 'italic' },
   groupScroll: { maxHeight: 120 },
   groupChip: { 
@@ -634,6 +684,37 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
     color: '#1f2937',
+  },
+  // Selected members styles
+  selectedMembersContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb'
+  },
+  selectedMembersTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8
+  },
+  selectedMembersTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  selectedMemberChip: {
+    height: 32,
+    backgroundColor: '#dbeafe',
+    borderRadius: 16
+  },
+  selectedMemberChipText: {
+    fontSize: 13,
+    color: '#1e40af'
   },
   // Split amount styles
   splitAmountText: {

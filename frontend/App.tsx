@@ -19,6 +19,7 @@ import { VerificationCompletedScreen } from './components/VerificationCompletedS
 import { VerificationRejectedScreen } from './components/VerificationRejectedScreen';
 import { VerificationPendingScreen } from './components/VerificationPendingScreen';
 import { SettlePaymentScreen } from './components/SettlePaymentScreen';
+import { GlobalSettleUpScreen } from './components/GlobalSettleUpScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { SuccessScreen } from './components/SuccessScreen';
@@ -311,6 +312,9 @@ export default function App() {
           </Stack.Screen>
           <Stack.Screen name="settle-payment">
             {(props) => <SettlePaymentScreen {...props} {...commonProps} />}
+          </Stack.Screen>
+          <Stack.Screen name="global-settle-up">
+            {(props) => <GlobalSettleUpScreen {...props} />}
           </Stack.Screen>
           <Stack.Screen name="profile">
             {(props) => <ProfileScreen {...props} {...commonProps} />}

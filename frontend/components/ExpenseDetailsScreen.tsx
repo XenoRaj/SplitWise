@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
 import { Button, Card, Avatar, TextInput as PaperTextInput } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { ArrowLeft, Users, Calendar, DollarSign, MessageSquare, CreditCard, Edit } from 'lucide-react-native';
+import { authStorage } from '../services/authStorage';
 import type { Expense } from '../App';
 
 type RootStackParamList = {
@@ -28,10 +29,88 @@ interface ExpenseDetailsScreenProps {
 export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreenProps) {
   const { expense } = route.params;
   const [newComment, setNewComment] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+
+  // Get current user ID on component mount
+  useEffect(() => {
+    const getCurrentUserId = async () => {
+      try {
+        const userData = await authStorage.getUserData();
+        setCurrentUserId(userData?.id || null);
+      } catch (error) {
+        console.error('Error getting current user ID:', error);
+      }
+    };
+    getCurrentUserId();
+  }, []);
 
   // Handle expense_splits safely
   const expenseSplits = expense.expense_splits || [];
   const splitAmount = expenseSplits.length > 0 ? parseFloat(expense.amount) / expenseSplits.length : parseFloat(expense.amount);
+
+  // Helper function to determine amount color and status for each split
+  const getSplitDisplayInfo = (split: any) => {
+    const splitAmount = parseFloat(split.amount);
+    const isPaidBy = split.user?.id === expense.paid_by?.id;
+    const isCurrentUser = split.user?.id === currentUserId;
+    const paidByIsCurrentUser = expense.paid_by?.id === currentUserId;
+
+    if (isPaidBy) {
+      // This person paid the expense - show how much they will get back from others
+      const otherSplits = expenseSplits.filter((s: any) => s.user?.id !== split.user?.id);
+      const totalOthersOwe = otherSplits.reduce((sum: number, s: any) => sum + parseFloat(s.amount), 0);
+      
+      if (isCurrentUser) {
+        // Current user paid - show how much others owe them
+        return {
+          amountColor: '#16a34a', // Green - money coming to you
+          statusText: 'You paid',
+          amountLabel: 'will receive',
+          backgroundColor: '#f0fdf4',
+          displayAmount: totalOthersOwe
+        };
+      } else {
+        // Someone else paid - show how much others owe them
+        return {
+          amountColor: '#16a34a', // Green - they will receive money
+          statusText: 'Paid the expense',
+          amountLabel: 'will receive',
+          backgroundColor: '#f0fdf4',
+          displayAmount: totalOthersOwe
+        };
+      }
+    } else {
+      // This person owes money
+      if (isCurrentUser) {
+        // Current user owes money
+        return {
+          amountColor: splitAmount > 0 ? '#dc2626' : '#6b7280', // Red if owes, gray if settled
+          statusText: splitAmount > 0 ? 'You owe' : 'You paid your share',
+          amountLabel: splitAmount > 0 ? 'owe' : 'settled',
+          backgroundColor: splitAmount > 0 ? '#fef2f2' : '#f9fafb',
+          displayAmount: splitAmount
+        };
+      } else if (paidByIsCurrentUser) {
+        // Current user paid, this person owes current user
+        return {
+          amountColor: splitAmount > 0 ? '#16a34a' : '#6b7280', // Green if they owe you, gray if settled
+          statusText: splitAmount > 0 ? 'Owes you' : 'Paid their share',
+          amountLabel: splitAmount > 0 ? 'owes you' : 'settled',
+          backgroundColor: splitAmount > 0 ? '#f0fdf4' : '#f9fafb',
+          displayAmount: splitAmount
+        };
+      } else {
+        // Neither current user paid nor owes to current user
+        return {
+          amountColor: splitAmount > 0 ? '#f59e0b' : '#6b7280', // Orange for third-party debt, gray if settled
+          statusText: splitAmount > 0 ? 'Owes the group' : 'Paid their share',
+          amountLabel: splitAmount > 0 ? 'owes' : 'settled',
+          backgroundColor: splitAmount > 0 ? '#fffbeb' : '#f9fafb',
+          displayAmount: splitAmount
+        };
+      }
+    }
+  };
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
@@ -45,7 +124,7 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
     navigation.navigate('settle-payment', {
       settlementType: 'individual',
       expenseId: expense.id,
-      groupId: expense.group_id
+      groupId: expense.group?.id
     });
   };
 
@@ -121,31 +200,41 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
             
             <View style={styles.splitList}>
               {/* Split participants */}
-              {expenseSplits.map((split: any, index: number) => (
-                <View key={split.id || index} style={styles.splitItem}>
-                  <Avatar.Text 
-                    size={40} 
-                    label={(split.user?.first_name || split.user?.email || 'U').charAt(0).toUpperCase()}
-                    style={styles.splitAvatar} 
-                  />
-                  <View style={styles.splitContent}>
-                    <Text style={styles.splitName}>
-                      {split.user?.full_name || split.user?.first_name || split.user?.email || 'Unknown'}
-                    </Text>
-                    <Text style={styles.splitRole}>
-                      {split.user?.id === expense.paid_by?.id ? 'Already paid their share' : 'Owes their share'}
-                    </Text>
+              {expenseSplits.map((split: any, index: number) => {
+                const displayInfo = getSplitDisplayInfo(split);
+                
+                return (
+                  <View 
+                    key={split.id || index} 
+                    style={[
+                      styles.splitItem,
+                      { backgroundColor: displayInfo.backgroundColor }
+                    ]}
+                  >
+                    <Avatar.Text 
+                      size={40} 
+                      label={(split.user?.first_name || split.user?.email || 'U').charAt(0).toUpperCase()}
+                      style={styles.splitAvatar} 
+                    />
+                    <View style={styles.splitContent}>
+                      <Text style={styles.splitName}>
+                        {split.user?.full_name || split.user?.first_name || split.user?.email || 'Unknown'}
+                      </Text>
+                      <Text style={[styles.splitRole, { color: displayInfo.amountColor }]}>
+                        {displayInfo.statusText}
+                      </Text>
+                    </View>
+                    <View style={styles.splitAmount}>
+                      <Text style={[styles.amountValue, { color: displayInfo.amountColor }]}>
+                        ${displayInfo.displayAmount.toFixed(2)}
+                      </Text>
+                      <Text style={[styles.amountLabel, { color: displayInfo.amountColor }]}>
+                        {displayInfo.amountLabel}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.splitAmount}>
-                    <Text style={styles.amountNeutral}>
-                      ${parseFloat(split.amount).toFixed(2)}
-                    </Text>
-                    <Text style={styles.amountLabel}>
-                      {split.user?.id === expense.paid_by?.id ? 'share' : 'owes'}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </Card.Content>
         </Card>
@@ -252,7 +341,8 @@ const styles = StyleSheet.create({
   splitRole: { fontSize: 14, color: '#6b7280' },
   splitAmount: { alignItems: 'flex-end' },
   amountNeutral: { fontSize: 16, fontWeight: '600', color: '#374151' },
-  amountLabel: { fontSize: 12, color: '#6b7280' },
+  amountValue: { fontSize: 16, fontWeight: '600' },
+  amountLabel: { fontSize: 12, marginTop: 2 },
   commentsCard: { elevation: 2 },
   commentsList: { marginBottom: 16, gap: 12 },
   commentItem: { flexDirection: 'row', alignItems: 'flex-start' },
