@@ -89,6 +89,14 @@ export interface Expense {
     message: string;
     timestamp: string;
   }>;
+  verification_status?: { [userId: string]: 'accepted' | 'pending' | 'rejected' };
+  is_approved?: boolean;
+  verification_details?: Array<{
+    user_id: number;
+    user_name: string;
+    user_email: string;
+    status: 'accepted' | 'pending' | 'rejected';
+  }>;
 }
 
 export interface GroupExpense {

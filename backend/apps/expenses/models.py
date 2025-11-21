@@ -40,6 +40,10 @@ class Expense(models.Model):
     # Receipt/image URL
     receipt_image = models.URLField(blank=True, null=True)
     
+    # Expense verification fields
+    verification_status = models.JSONField(default=dict, blank=True)  # {"user_id": "accepted|pending|rejected"}
+    is_approved = models.BooleanField(default=False)  # True when all members have accepted
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     expense_date = models.DateTimeField()
@@ -50,6 +54,58 @@ class Expense(models.Model):
     
     def __str__(self):
         return f"{self.title} - ${self.amount} by {self.paid_by.full_name}"
+    
+    def get_involved_users(self):
+        """Get all users involved in this expense (payer + splitters)"""
+        splitter_ids = set(self.expense_splits.values_list('user_id', flat=True))
+        splitter_ids.add(self.paid_by.id)
+        return list(splitter_ids)
+    
+    def update_verification_status(self, user_id, status):
+        """Update verification status for a user"""
+        valid_statuses = ['accepted', 'pending', 'rejected']
+        if status not in valid_statuses:
+            raise ValueError(f"Status must be one of: {valid_statuses}")
+        
+        self.verification_status[str(user_id)] = status
+        self.check_and_update_approval_status()
+        self.save()
+    
+    def check_and_update_approval_status(self):
+        """Check if all involved users have accepted and update is_approved"""
+        involved_users = self.get_involved_users()
+        
+        # Check if any user has rejected
+        for user_id in involved_users:
+            status = self.verification_status.get(str(user_id), 'pending')
+            if status == 'rejected':
+                self.is_approved = False
+                return
+        
+        # Check if all users have accepted
+        all_accepted = True
+        for user_id in involved_users:
+            status = self.verification_status.get(str(user_id), 'pending')
+            if status != 'accepted':
+                all_accepted = False
+                break
+        
+        self.is_approved = all_accepted
+    
+    def initialize_verification_status(self):
+        """Initialize verification status for all involved users"""
+        involved_users = self.get_involved_users()
+        
+        for user_id in involved_users:
+            if user_id == self.paid_by.id:
+                # Creator automatically accepts
+                self.verification_status[str(user_id)] = 'accepted'
+            else:
+                # Others start as pending
+                self.verification_status[str(user_id)] = 'pending'
+        
+        self.check_and_update_approval_status()
+        self.save()
     
     def calculate_splits(self):
         """Calculate how much each person owes for this expense"""

@@ -37,19 +37,22 @@ class CustomUser(AbstractUser):
         return f"{self.first_name} {self.last_name}".strip()
     
     def get_balance_summary(self):
-        """Calculate user's balance from expenses"""
+        """Calculate user's balance from expenses (only approved expenses)"""
         from django.db.models import Sum
         from apps.expenses.models import ExpenseSplit, Settlement, Expense
         
         # Amount user owes to others (splits where they are assigned, but EXCLUDE expenses they paid for)
-        # Only count splits from expenses paid by OTHER people
+        # Only count splits from expenses paid by OTHER people AND only from APPROVED expenses
         owed_to_others = self.expense_splits.exclude(
             expense__paid_by=self
+        ).filter(
+            expense__is_approved=True
         ).aggregate(total=Sum('amount'))['total'] or 0
         
         # Amount others owe to user (from expenses they paid, minus their own split)
+        # Only count APPROVED expenses
         owed_by_others = 0
-        user_paid_expenses = Expense.objects.filter(paid_by=self)
+        user_paid_expenses = Expense.objects.filter(paid_by=self, is_approved=True)
         for expense in user_paid_expenses:
             # Sum of all splits except user's own split
             total_splits = expense.expense_splits.exclude(user=self).aggregate(total=Sum('amount'))['total'] or 0

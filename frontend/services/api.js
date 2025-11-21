@@ -590,9 +590,14 @@ export const apiService = {
   },
 
   // Get group-specific settlement summary
-  getGroupSettlementSummary: async (groupId) => {
+  // options: { approvedOnly: boolean }
+  getGroupSettlementSummary: async (groupId, options = {}) => {
     try {
-      const response = await api.get(`/groups/${groupId}/settlements/summary/`);
+      let url = `/groups/${groupId}/settlements/summary/`;
+      if (options.approvedOnly) {
+        url += '?approved_only=1';
+      }
+      const response = await api.get(url);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Get group settlement summary failed:', error);
@@ -613,6 +618,36 @@ export const apiService = {
       return { 
         success: false, 
         error: error.response?.data?.detail || error.message || 'Failed to get group balance summary' 
+      };
+    }
+  },
+
+  // ===== EXPENSE VERIFICATION API =====
+
+  // Get expense verification status
+  getExpenseVerificationStatus: async (expenseId) => {
+    try {
+      const response = await api.get(`/expenses/${expenseId}/verification/`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get expense verification status failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to get verification status' 
+      };
+    }
+  },
+
+  // Update expense verification status
+  updateExpenseVerificationStatus: async (expenseId, status) => {
+    try {
+      const response = await api.patch(`/expenses/${expenseId}/verification/update/`, { status });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Update expense verification status failed:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.message || 'Failed to update verification status' 
       };
     }
   },

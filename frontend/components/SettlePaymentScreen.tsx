@@ -14,6 +14,7 @@ type RootStackParamList = {
     groupId?: number;
     recipientId?: number;
     amount?: number;
+    approvedOnly?: boolean;
   };
   dashboard: undefined;
   success: { message: string };
@@ -173,16 +174,19 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
       }
     } else if (settlementType === 'group' && groupId) {
       // For group settlement, get all group members and their balances
-      const result = await apiService.getGroupSettlementSummary(groupId);
+      // Respect approvedOnly flag passed via route params (requested from GroupDetailsScreen)
+      const approvedOnly = !!route.params?.approvedOnly;
+      const result = await apiService.getGroupSettlementSummary(groupId, { approvedOnly });
       setLoading(false);
-      
+
       if (result.success) {
         console.log('Group settlement summary response:', result.data);
-        const recipients = result.data.summary.map((item: Recipient) => ({
+        // Use the same mapping as dashboard/global settle up for consistency
+        const recipients = result.data.summary.map((item: any) => ({
           user_id: item.user_id,
-          name: item.name,
-          email: item.email,
-          balance: item.balance,
+          name: item.user_name || item.name,
+          email: item.user_email || item.email,
+          balance: item.amount !== undefined ? item.amount : item.balance,
           type: item.type,
           actionType: item.type === 'owes_to_you' ? 'collect' : 'pay'
         }));

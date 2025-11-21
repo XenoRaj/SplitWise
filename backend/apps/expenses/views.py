@@ -80,6 +80,7 @@ def user_dashboard_summary(request):
     ).values_list('group_id', flat=True)
     
     # Get recent expenses (both group and personal expenses where user is involved)
+    # Include both approved and pending expenses for visibility, but mark them appropriately
     recent_expenses = Expense.objects.filter(
         Q(group_id__in=user_groups) |  # Group expenses where user is member
         Q(group__isnull=True, paid_by=user) |  # Personal expenses paid by user
@@ -187,10 +188,11 @@ def group_balance_summary(request, group_id):
             status=status.HTTP_403_FORBIDDEN
         )
     
-    # Calculate balances from expense splits for this group
+    # Calculate balances from expense splits for this group (only approved expenses)
     user_splits = ExpenseSplit.objects.filter(
         user=user,
-        expense__group_id=group_id
+        expense__group_id=group_id,
+        expense__is_approved=True
     ).select_related('expense')
     
     total_user_owes = 0  # What user owes to others
@@ -252,14 +254,14 @@ def calculate_user_debts(request, group_id=None):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        expenses = Expense.objects.filter(group_id=group_id)
+        expenses = Expense.objects.filter(group_id=group_id, is_approved=True)
     else:
         # Calculate debts across all user's groups
         user_groups = GroupMembership.objects.filter(
             user=user, is_active=True
         ).values_list('group_id', flat=True)
         
-        expenses = Expense.objects.filter(group_id__in=user_groups)
+        expenses = Expense.objects.filter(group_id__in=user_groups, is_approved=True)
     
     # Calculate net balances between users
     balances = defaultdict(lambda: defaultdict(Decimal))
@@ -448,8 +450,8 @@ def settlement_summary(request):
     """Get user's settlement summary - who owes what to whom"""
     user = request.user
     
-    # Calculate balances from expense splits
-    user_splits = ExpenseSplit.objects.filter(user=user).select_related('expense')
+    # Calculate balances from expense splits (only approved expenses)
+    user_splits = ExpenseSplit.objects.filter(user=user, expense__is_approved=True).select_related('expense')
     
     # Group by other users to calculate net amounts
     balances = defaultdict(Decimal)
@@ -489,6 +491,91 @@ def settlement_summary(request):
     })
 
 
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_expense_verification(request, expense_id):
+    """
+    Update verification status for an expense
+    """
+    try:
+        expense = Expense.objects.get(id=expense_id)
+    except Expense.DoesNotExist:
+        return Response(
+            {'error': 'Expense not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    user = request.user
+    new_status = request.data.get('status')
+    
+    if new_status not in ['accepted', 'pending', 'rejected']:
+        return Response(
+            {'error': 'Status must be one of: accepted, pending, rejected'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Check if user is involved in this expense
+    involved_users = expense.get_involved_users()
+    if user.id not in involved_users:
+        return Response(
+            {'error': 'You are not involved in this expense'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Update verification status
+    try:
+        expense.update_verification_status(user.id, new_status)
+        
+        # Get updated verification details
+        from .serializers import ExpenseSerializer
+        serializer = ExpenseSerializer(expense)
+        
+        return Response({
+            'message': f'Verification status updated to {new_status}',
+            'expense': serializer.data
+        })
+    except ValueError as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def expense_verification_status(request, expense_id):
+    """
+    Get verification status for an expense
+    """
+    try:
+        expense = Expense.objects.get(id=expense_id)
+    except Expense.DoesNotExist:
+        return Response(
+            {'error': 'Expense not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    user = request.user
+    involved_users = expense.get_involved_users()
+    
+    # Check if user is involved in this expense
+    if user.id not in involved_users:
+        return Response(
+            {'error': 'You are not involved in this expense'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    from .serializers import ExpenseSerializer
+    serializer = ExpenseSerializer(expense)
+    
+    return Response({
+        'expense_id': expense.id,
+        'is_approved': expense.is_approved,
+        'verification_details': serializer.data['verification_details'],
+        'user_status': expense.verification_status.get(str(user.id), 'pending')
+    })
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def process_payment(request):
@@ -521,9 +608,10 @@ def process_payment(request):
         # For global settlements, calculate net balance between the two users
         actual_amount = amount
         if settlement_type == 'global':
-            # Calculate net balance: what current user owes to receiver
+            # Calculate net balance: what current user owes to receiver (only approved expenses)
             user_splits = ExpenseSplit.objects.filter(
-                user=request.user
+                user=request.user,
+                expense__is_approved=True
             ).select_related('expense')
             
             balance_with_receiver = Decimal('0')
@@ -580,30 +668,34 @@ def process_payment(request):
             # For now, let's update the expense splits to reflect the payment
             # Find expenses where current user owes money to the receiver
             if expense_id:
-                # Settle specific expense only
+                # Settle specific expense only (only approved expenses)
                 user_splits = ExpenseSplit.objects.filter(
                     user=request.user,
                     expense__paid_by=receiver,
-                    expense_id=expense_id
+                    expense_id=expense_id,
+                    expense__is_approved=True
                 ).select_related('expense')
             elif settlement_type == 'global':
-                # For global settlement, get all splits involving both users
+                # For global settlement, get all splits involving both users (only approved expenses)
                 # This includes splits where user owes AND where receiver owes
                 user_splits = ExpenseSplit.objects.filter(
                     user=request.user,
-                    expense__paid_by=receiver
+                    expense__paid_by=receiver,
+                    expense__is_approved=True
                 ).select_related('expense')
                 
                 # Also mark splits where receiver owes (they are debtor, not payer)
                 receiver_splits = ExpenseSplit.objects.filter(
                     user=receiver,
-                    expense__paid_by=request.user
+                    expense__paid_by=request.user,
+                    expense__is_approved=True
                 ).select_related('expense')
             else:
-                # Settle any/all expenses (original behavior for general settlements)
+                # Settle any/all expenses (original behavior for general settlements, only approved)
                 user_splits = ExpenseSplit.objects.filter(
                     user=request.user,
-                    expense__paid_by=receiver
+                    expense__paid_by=receiver,
+                    expense__is_approved=True
                 ).select_related('expense')
             
             remaining_amount = actual_amount if settlement_type == 'global' else amount
@@ -640,7 +732,8 @@ def process_payment(request):
             if settlement_type == 'global':
                 receiver_splits_list = ExpenseSplit.objects.filter(
                     user=receiver,
-                    expense__paid_by=request.user
+                    expense__paid_by=request.user,
+                    expense__is_approved=True
                 ).select_related('expense')
                 
                 for split in receiver_splits_list:

@@ -21,6 +21,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
     group_id = serializers.SerializerMethodField()
     group_name = serializers.SerializerMethodField()
     expense_splits = ExpenseSplitSerializer(many=True, read_only=True)
+    verification_details = serializers.SerializerMethodField()
     
     def get_group_id(self, obj):
         return obj.group.id if obj.group else None
@@ -28,12 +29,35 @@ class ExpenseSerializer(serializers.ModelSerializer):
     def get_group_name(self, obj):
         return obj.group.name if obj.group else None
     
+    def get_verification_details(self, obj):
+        """Get verification details with user information"""
+        from apps.users.models import CustomUser
+        details = []
+        
+        involved_users = obj.get_involved_users()
+        for user_id in involved_users:
+            try:
+                user = CustomUser.objects.get(id=user_id)
+                status = obj.verification_status.get(str(user_id), 'pending')
+                details.append({
+                    'user_id': user_id,
+                    'user_name': user.full_name,
+                    'user_email': user.email,
+                    'status': status
+                })
+            except CustomUser.DoesNotExist:
+                continue
+        
+        return details
+    
     class Meta:
         model = Expense
         fields = ('id', 'title', 'description', 'amount', 'currency', 
                  'paid_by', 'group_id', 'group_name', 'split_type', 'receipt_image',
-                 'created_at', 'updated_at', 'expense_date', 'expense_splits')
-        read_only_fields = ('id', 'created_at', 'updated_at', 'paid_by', 'group_id', 'group_name')
+                 'created_at', 'updated_at', 'expense_date', 'expense_splits',
+                 'verification_status', 'is_approved', 'verification_details')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'paid_by', 'group_id', 
+                          'group_name', 'verification_status', 'is_approved', 'verification_details')
 
 
 class ExpenseCreateSerializer(serializers.ModelSerializer):
@@ -105,6 +129,9 @@ class ExpenseCreateSerializer(serializers.ModelSerializer):
                     user=membership.user,
                     amount=amount_per_person
                 )
+        
+        # Initialize verification status after splits are created
+        expense.initialize_verification_status()
         
         return expense
 

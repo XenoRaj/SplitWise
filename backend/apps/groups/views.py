@@ -145,8 +145,8 @@ def group_settlement_summary(request, group_id):
             status=status.HTTP_403_FORBIDDEN
         )
     
-    # Get all expenses in this group
-    expenses = Expense.objects.filter(group_id=group_id)
+    # Get only approved expenses in this group
+    expenses = Expense.objects.filter(group_id=group_id, is_approved=True)
     
     # Calculate balances from expense splits
     balances = defaultdict(Decimal)

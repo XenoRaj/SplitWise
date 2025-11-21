@@ -54,6 +54,7 @@ type RootStackParamList = {
   'group-details': { group: Group };
   groups: undefined;
   'add-expense': { groupId?: number };
+  'expense-details': { expense: GroupExpense };
   'expense-creator': { categoryType: string; expenses: GroupExpense[]; group: Group };
   'verification-completed': { categoryType: string; expenses: GroupExpense[]; group: Group };
   'verification-rejected': { categoryType: string; expenses: GroupExpense[]; group: Group };
@@ -62,6 +63,7 @@ type RootStackParamList = {
     settlementType: 'individual' | 'group';
     expenseId?: number;
     groupId?: number;
+    approvedOnly?: boolean;
   };
   // Add other screens...
 };
@@ -86,6 +88,8 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
     userOwes: 0,
     userOwed: 0
   });
+
+  
 
   useEffect(() => {
     fetchGroupExpenses();
@@ -138,10 +142,11 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
     } else {
       // Fallback to simple calculation if API fails
       console.warn('Failed to get group balance, using fallback calculation');
+      const userId = typeof user?.id === 'string' ? parseInt(user.id, 10) : user?.id;
       const userPaid = expensesData
-        .filter(expense => expense.paid_by.id === user?.id)
+        .filter(expense => expense.paid_by.id === userId)
         .reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
-      
+
       const userShare = totalExpenses / (group.member_count || 1);
       const balance = userPaid - userShare;
       
@@ -181,8 +186,9 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
   };
 
   const categorizeExpenses = () => {
+    const userId = typeof user?.id === 'string' ? parseInt(user.id, 10) : user?.id;
     const categories = {
-      creator: expenses.filter(expense => expense.paid_by.id === user?.id),
+      creator: expenses.filter(expense => expense.paid_by.id === userId),
       completed: expenses.filter(expense => expense.status === 'completed'),
       rejected: expenses.filter(expense => expense.status === 'rejected'),
       pending: expenses.filter(expense => expense.status === 'pending')
@@ -224,11 +230,15 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
         </TouchableOpacity>
         <View style={styles.headerContent}>
           <View style={styles.groupAvatarContainer}>
-            <Text style={styles.groupAvatar}>{group.name.charAt(0).toUpperCase()}</Text>
+            <Text style={styles.groupAvatar}>
+              {group && typeof group.name === 'string' && group.name.length > 0
+                ? group.name.charAt(0).toUpperCase()
+                : '?'}
+            </Text>
           </View>
           <View>
-            <Text style={styles.headerTitle}>{group.name}</Text>
-            <Text style={styles.headerSubtitle}>{group.member_count} members</Text>
+            <Text style={styles.headerTitle}>{group && group.name ? group.name : 'Group'}</Text>
+            <Text style={styles.headerSubtitle}>{group && typeof group.member_count === 'number' ? group.member_count : 0} members</Text>
           </View>
         </View>
       </View>
@@ -263,143 +273,9 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
           </View>
         ) : (
           <>
-        {/* Expense Categories */}
-        <View style={styles.categoriesSection}>
-          <Text style={styles.sectionTitle}>Expense Categories</Text>
-          <View style={styles.categoriesList}>
-            
-            {/* Created by You */}
-            <TouchableOpacity 
-              style={styles.categoryCard}
-              onPress={() => handleCategoryClick('creator', categories.creator)}
-            >
-              <Card.Content style={styles.categoryContent}>
-                <View style={styles.categoryHeader}>
-                  <View style={[styles.categoryIcon, { backgroundColor: '#dbeafe' }]}>
-                    <Users size={20} color="#3b82f6" />
-                  </View>
-                  <View style={styles.categoryText}>
-                    <Text style={styles.categoryTitle}>Created by You</Text>
-                    <Text style={styles.categorySubtitle}>
-                      Expenses you've added to this group
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.badgeText}>{categories.creator.length} expenses</Text>
-                </View>
-              </Card.Content>
-            </TouchableOpacity>
+        {/* Expense Categories removed per request */}
 
-            {/* Verification Completed */}
-            <TouchableOpacity 
-              style={styles.categoryCard}
-              onPress={() => handleCategoryClick('completed', categories.completed)}
-            >
-              <Card.Content style={styles.categoryContent}>
-                <View style={styles.categoryHeader}>
-                  <View style={[styles.categoryIcon, { backgroundColor: '#dcfce7' }]}>
-                    <CheckCircle size={20} color="#16a34a" />
-                  </View>
-                  <View style={styles.categoryText}>
-                    <Text style={styles.categoryTitle}>Verification Completed</Text>
-                    <Text style={styles.categorySubtitle}>
-                      Approved and verified expenses
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.categoryBadge}>
-                  <Text style={[styles.badgeText, { color: '#16a34a' }]}>{categories.completed.length} verified</Text>
-                </View>
-              </Card.Content>
-            </TouchableOpacity>
-
-            {/* Verification Rejected */}
-            <TouchableOpacity 
-              style={styles.categoryCard}
-              onPress={() => handleCategoryClick('rejected', categories.rejected)}
-            >
-              <Card.Content style={styles.categoryContent}>
-                <View style={styles.categoryHeader}>
-                  <View style={[styles.categoryIcon, { backgroundColor: '#fef2f2' }]}>
-                    <XCircle size={20} color="#dc2626" />
-                  </View>
-                  <View style={styles.categoryText}>
-                    <Text style={styles.categoryTitle}>Verification Rejected</Text>
-                    <Text style={styles.categorySubtitle}>
-                      Expenses that need review or correction
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.categoryBadge}>
-                  <Text style={[styles.badgeText, { color: '#dc2626' }]}>{categories.rejected.length} rejected</Text>
-                </View>
-              </Card.Content>
-            </TouchableOpacity>
-
-            {/* Verification Pending */}
-            <TouchableOpacity 
-              style={styles.categoryCard}
-              onPress={() => handleCategoryClick('pending', categories.pending)}
-            >
-              <Card.Content style={styles.categoryContent}>
-                <View style={styles.categoryHeader}>
-                  <View style={[styles.categoryIcon, { backgroundColor: '#fef3c7' }]}>
-                    <Clock size={20} color="#d97706" />
-                  </View>
-                  <View style={styles.categoryText}>
-                    <Text style={styles.categoryTitle}>Verification Pending</Text>
-                    <Text style={styles.categorySubtitle}>
-                      Expenses waiting for approval
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.categoryBadge}>
-                  <Text style={[styles.badgeText, { color: '#d97706' }]}>{categories.pending.length} pending</Text>
-                </View>
-              </Card.Content>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Recent Activity */}
-        <View style={styles.activitySection}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <View style={styles.activityList}>
-            {expenses.length === 0 ? (
-              <Card style={styles.activityItem}>
-                <Card.Content style={styles.activityContent}>
-                  <Text style={styles.emptyText}>No expenses yet. Add your first expense to get started!</Text>
-                </Card.Content>
-              </Card>
-            ) : (
-              expenses.slice(0, 3).map((expense) => (
-                <TouchableOpacity key={expense.id} style={styles.activityItem}>
-                  <Card.Content style={styles.activityContent}>
-                    <View style={styles.activityHeader}>
-                      {getStatusIcon(expense.status)}
-                      <View style={styles.activityText}>
-                        <Text style={styles.activityTitle}>{expense.title}</Text>
-                        <Text style={styles.activityMeta}>
-                          Added by {expense.paid_by.first_name || expense.paid_by.email} • {new Date(expense.expense_date).toLocaleDateString()}
-                        </Text>
-                        {expense.description && (
-                          <Text style={styles.activityDescription}>{expense.description}</Text>
-                        )}
-                      </View>
-                    </View>
-                    <View style={styles.activityFooter}>
-                      <Text style={styles.activityAmount}>${parseFloat(expense.amount).toFixed(2)}</Text>
-                      <View style={[styles.statusChip, { backgroundColor: getStatusColor(expense.status) }]}>
-                        <Text style={styles.statusChipText}>{expense.status}</Text>
-                      </View>
-                    </View>
-                  </Card.Content>
-                </TouchableOpacity>
-              ))
-            )}
-          </View>
-        </View>
+        
 
         {/* Quick Actions */}
         <View style={styles.actionsSection}>
@@ -425,7 +301,9 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
               mode="outlined"
               onPress={() => navigation.navigate('settle-payment', {
                 settlementType: 'group',
-                groupId: group.id
+                groupId: group.id,
+                // ask settle screen to consider only approved expenses
+                approvedOnly: true
               })}
               style={styles.actionButton}
               contentStyle={styles.actionButtonContent}
@@ -433,6 +311,45 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
             >
               Settle Up
             </Button>
+          </View>
+        </View>
+
+        {/* Recent Activity */}
+        <View style={styles.activitySection}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <View style={styles.activityList}>
+            {expenses.length === 0 ? (
+              <Card style={styles.activityItem}>
+                <Card.Content style={styles.activityContent}>
+                  <Text style={styles.emptyText}>No expenses yet. Add your first expense to get started!</Text>
+                </Card.Content>
+              </Card>
+            ) : (
+              expenses.slice(0, 3).map((expense) => (
+                <TouchableOpacity key={expense.id} style={styles.activityItem} onPress={() => navigation.navigate('expense-details', { expense })}>
+                  <Card.Content style={styles.activityContent}>
+                    <View style={styles.activityHeader}>
+                      {getStatusIcon(expense.status)}
+                      <View style={styles.activityText}>
+                        <Text style={styles.activityTitle}>{expense.title}</Text>
+                        <Text style={styles.activityMeta}>
+                          Added by {expense.paid_by.first_name || expense.paid_by.email} • {new Date(expense.expense_date).toLocaleDateString()}
+                        </Text>
+                        {expense.description && (
+                          <Text style={styles.activityDescription}>{expense.description}</Text>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.activityFooter}>
+                      <Text style={styles.activityAmount}>${parseFloat(expense.amount).toFixed(2)}</Text>
+                      <View style={[styles.statusChip, { backgroundColor: getStatusColor(expense.status) }]}>
+                        <Text style={styles.statusChipText}>{expense.status}</Text>
+                      </View>
+                    </View>
+                  </Card.Content>
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         </View>
         </>

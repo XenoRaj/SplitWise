@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
 import { Button, Card, Avatar, TextInput as PaperTextInput } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { ArrowLeft, Users, Calendar, DollarSign, MessageSquare, CreditCard, Edit } from 'lucide-react-native';
 import { authStorage } from '../services/authStorage';
+import VerificationToggle, { VerificationStatus } from './ui/verification-toggle';
+import { apiService } from '../services/api';
 import type { Expense } from '../App';
+
+interface VerificationDetail {
+  user_id: number;
+  user_name: string;
+  user_email: string;
+  status: 'accepted' | 'pending' | 'rejected';
+}
 
 type RootStackParamList = {
   expenseDetails: { expense: Expense };
@@ -30,6 +39,9 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
   const { expense } = route.params;
   const [newComment, setNewComment] = useState('');
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [verificationDetails, setVerificationDetails] = useState<VerificationDetail[]>(expense.verification_details || []);
+  const [isApproved, setIsApproved] = useState<boolean>(expense.is_approved || false);
+  const [loading, setLoading] = useState(false);
 
   // Get current user ID on component mount
   useEffect(() => {
@@ -43,6 +55,27 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
     };
     getCurrentUserId();
   }, []);
+
+  // Handle verification status updates
+  const handleVerificationUpdate = async (newStatus: VerificationStatus) => {
+    if (!currentUserId || isApproved) return;
+    try {
+      setLoading(true);
+      const response = await apiService.updateExpenseVerificationStatus(expense.id, newStatus);
+      if (response.success) {
+        const updatedDetails = response.data.expense.verification_details;
+        const updatedIsApproved = response.data.expense.is_approved;
+        setVerificationDetails(updatedDetails);
+        setIsApproved(updatedIsApproved);
+      }
+    } catch (error) {
+      console.error('Error updating verification status:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const currentUserDetail = verificationDetails.find(detail => detail.user_id === currentUserId);
 
   // Handle expense_splits safely
   const expenseSplits = expense.expense_splits || [];
@@ -147,9 +180,28 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
           <Card.Content style={styles.cardContent}>
             <View style={styles.expenseHeader}>
               <Text style={styles.expenseTitle}>{expense.title}</Text>
-              <View style={[styles.statusBadge, styles.pendingBadge]}>
-                <Text style={[styles.statusText, styles.pendingText]}>
-                  Pending
+              <View style={[
+                styles.statusBadge, 
+                isApproved 
+                  ? styles.approvedBadge 
+                  : verificationDetails.some((detail: VerificationDetail) => detail.status === 'rejected')
+                    ? styles.rejectedBadge
+                    : styles.pendingBadge
+              ]}>
+                <Text style={[
+                  styles.statusText, 
+                  isApproved 
+                    ? styles.approvedText 
+                    : verificationDetails.some((detail: VerificationDetail) => detail.status === 'rejected')
+                      ? styles.rejectedText
+                      : styles.pendingText
+                ]}>
+                  {isApproved 
+                    ? 'Approved' 
+                    : verificationDetails.some((detail: VerificationDetail) => detail.status === 'rejected')
+                      ? 'Rejected'
+                      : 'Pending'
+                  }
                 </Text>
               </View>
             </View>
@@ -187,8 +239,27 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
                 </Text>
               </View>
             </View>
+
+            {/* Verification Control - Only show if user is involved */}
+            {currentUserDetail && (
+              <View style={styles.verificationRow}>
+                <Text style={styles.verificationLabel}>Your approval:</Text>
+                {loading ? (
+                  <ActivityIndicator size="small" color="#007AFF" />
+                ) : (
+                  <VerificationToggle
+                    value={currentUserDetail.status}
+                    onChange={handleVerificationUpdate}
+                    size="small"
+                    disabled={isApproved}
+                  />
+                )}
+              </View>
+            )}
           </Card.Content>
         </Card>
+
+        {/* Remove the separate verification card */}
 
         {/* Split Breakdown */}
         <Card style={styles.splitCard}>
@@ -202,6 +273,7 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
               {/* Split participants */}
               {expenseSplits.map((split: any, index: number) => {
                 const displayInfo = getSplitDisplayInfo(split);
+                const userVerification = verificationDetails.find((d: any) => d.user_id === split.user?.id);
                 
                 return (
                   <View 
@@ -217,9 +289,21 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
                       style={styles.splitAvatar} 
                     />
                     <View style={styles.splitContent}>
-                      <Text style={styles.splitName}>
-                        {split.user?.full_name || split.user?.first_name || split.user?.email || 'Unknown'}
-                      </Text>
+                      <View style={styles.splitNameRow}>
+                        <Text style={styles.splitName}>
+                          {split.user?.full_name || split.user?.first_name || split.user?.email || 'Unknown'}
+                        </Text>
+                        {userVerification && (
+                          <View style={[
+                            styles.smallBadge,
+                            userVerification.status === 'accepted' ? styles.badgeAccepted : userVerification.status === 'rejected' ? styles.badgeRejected : styles.badgePending
+                          ]}>
+                            <Text style={styles.smallBadgeText}>
+                              {userVerification.status === 'accepted' ? '✓' : userVerification.status === 'rejected' ? '✗' : '⏳'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={[styles.splitRole, { color: displayInfo.amountColor }]}>
                         {displayInfo.statusText}
                       </Text>
@@ -291,7 +375,7 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
         </Card>
       </ScrollView>
 
-      {/* Footer Actions - Always show settle button since API doesn't track settled status */}
+      {/* Footer Actions - Only allow settle if approved */}
       <View style={styles.footer}>
         <Button 
           mode="contained"
@@ -299,6 +383,7 @@ export function ExpenseDetailsScreen({ navigation, route }: ExpenseDetailsScreen
           style={styles.settleButton}
           contentStyle={styles.buttonContent}
           icon={() => <CreditCard size={16} color="#fff" />}
+          disabled={!isApproved}
         >
           Settle Payment
         </Button>
@@ -320,9 +405,13 @@ const styles = StyleSheet.create({
   expenseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   expenseTitle: { fontSize: 20, fontWeight: '600', color: '#1f2937' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  approvedBadge: { backgroundColor: '#dcfce7' },
+  rejectedBadge: { backgroundColor: '#fee2e2' },
   settledBadge: { backgroundColor: '#dcfce7' },
   pendingBadge: { backgroundColor: '#fef3c7' },
   statusText: { fontSize: 12, fontWeight: '500' },
+  approvedText: { color: '#166534' },
+  rejectedText: { color: '#dc2626' },
   settledText: { color: '#166534' },
   pendingText: { color: '#92400e' },
   expenseGrid: { flexDirection: 'row', gap: 16, marginBottom: 16 },
@@ -330,6 +419,19 @@ const styles = StyleSheet.create({
   expenseItemContent: { marginLeft: 8, flex: 1 },
   expenseLabel: { fontSize: 12, color: '#6b7280', marginBottom: 2 },
   expenseValue: { fontSize: 16, fontWeight: '500', color: '#1f2937' },
+  verificationRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 0,
+    paddingHorizontal: 8,
+    maxWidth: '100%',
+    overflow: 'hidden',
+    gap: 8,
+  },
+  verificationLabel: { fontSize: 13, fontWeight: '500', color: '#374151', marginRight: 8, flexShrink: 1, minWidth: 60 },
   splitCard: { marginBottom: 16, elevation: 2 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   cardTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937', marginLeft: 8 },
@@ -337,7 +439,15 @@ const styles = StyleSheet.create({
   splitItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
   splitAvatar: { backgroundColor: '#e5e7eb' },
   splitContent: { flex: 1, marginLeft: 12 },
+  splitNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 8 },
+  smallBadge: { marginLeft: 8, width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  smallBadgeText: { fontSize: 12, fontWeight: '700', color: '#fff', textAlign: 'center', lineHeight: 14 },
+  // Use same colors as VerificationToggle options for consistency
+  badgeAccepted: { backgroundColor: '#10B981' },
+  badgeRejected: { backgroundColor: '#EF4444' },
+  badgePending: { backgroundColor: '#F59E0B' },
   splitName: { fontSize: 16, fontWeight: '500', color: '#1f2937' },
+  splitNameFlexible: { flex: 1, flexShrink: 1 },
   splitRole: { fontSize: 14, color: '#6b7280' },
   splitAmount: { alignItems: 'flex-end' },
   amountNeutral: { fontSize: 16, fontWeight: '600', color: '#374151' },

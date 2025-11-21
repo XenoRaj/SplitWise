@@ -181,21 +181,21 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
       subtitle: 'Update your account password',
       action: () => navigation.navigate('password-reset')
     },
-    {
-      icon: CreditCard,
-      title: 'Payment Methods',
-      subtitle: 'Manage your payment options',
-      action: () => showLoading(() => {
-        navigation.navigate('success', { message: 'Payment methods updated successfully!' });
-      })
-    },
-    {
-      icon: Bell,
-      title: 'Notifications',
-      subtitle: 'Control your notification preferences',
-      toggle: notifications,
-      onToggle: setNotifications
-    },
+    // {
+    //   icon: CreditCard,
+    //   title: 'Payment Methods',
+    //   subtitle: 'Manage your payment options',
+    //   action: () => showLoading(() => {
+    //     navigation.navigate('success', { message: 'Payment methods updated successfully!' });
+    //   })
+    // },
+    // {
+    //   icon: Bell,
+    //   title: 'Notifications',
+    //   subtitle: 'Control your notification preferences',
+    //   toggle: notifications,
+    //   onToggle: setNotifications
+    // },
     {
       icon: Smartphone,
       title: 'Two-Factor Authentication',
@@ -219,9 +219,9 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile & Settings</Text>
-        <TouchableOpacity style={styles.settingsButton}>
+        {/* <TouchableOpacity style={styles.settingsButton}>
           <Settings size={20} color="#6b7280" />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -254,9 +254,9 @@ export function ProfileScreen({ navigation, user, logout, showLoading }: Profile
               )}
             </View>
             
-            <Button mode="outlined" style={styles.editButton}>
+            {/* <Button mode="outlined" style={styles.editButton}>
               Edit Profile
-            </Button>
+            </Button> */}
           </Card.Content>
         </Card>
 

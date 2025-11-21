@@ -7,6 +7,8 @@ import { Plus, Users, CreditCard, Home, ArrowUpRight, ArrowDownLeft } from 'luci
 import { apiService } from '../services/api';
 import type { User, Expense } from '../App';
 
+const ACCENT_GREEN = '#51cf66';
+
 // Helper function to get relative time
 const getRelativeTime = (dateString: string) => {
   const now = new Date();
@@ -181,15 +183,7 @@ export function DashboardScreen({ navigation, user, expenses }: DashboardScreenP
             <Text style={styles.subtitle}>Let's split some bills!</Text>
           </View>
         </View>
-        <Button
-          mode="contained"
-          onPress={() => navigation.navigate('add-expense')}
-          style={styles.addButton}
-          contentStyle={styles.addButtonContent}
-          icon={() => <Plus size={16} color="#fff" />}
-        >
-          {' '}
-        </Button>
+        {/* Removed unused add button per user request */}
       </View>
 
       {/* Balance Overview */}
