@@ -100,16 +100,15 @@ export function GroupsScreen({ navigation, user, showLoading }: GroupsScreenProp
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Groups & Friends</Text>
-        <Button
-          mode="contained"
-          onPress={handleCreateGroup}
-          style={styles.createButton}
-          contentStyle={styles.createButtonContent}
-          icon={() => <Plus size={16} color="#fff" />}
-        >
-          Create Group
-        </Button>
       </View>
+      
+      {/* Floating Action Button */}
+      <TouchableOpacity 
+        style={styles.fab}
+        onPress={handleCreateGroup}
+      >
+        <Plus size={24} color="#fff" />
+      </TouchableOpacity>
 
       {/* Search */}
       <View style={styles.searchSection}>
@@ -143,12 +142,6 @@ export function GroupsScreen({ navigation, user, showLoading }: GroupsScreenProp
                     <Users size={24} color="#3b82f6" />
                   </View>
                   <Text style={styles.actionText}>Create Group</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton} onPress={() => handleInviteMember('new')}>
-                  <View style={styles.actionIcon}>
-                    <UserPlus size={24} color="#3b82f6" />
-                  </View>
-                  <Text style={styles.actionText}>Add Friend</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -186,19 +179,6 @@ export function GroupsScreen({ navigation, user, showLoading }: GroupsScreenProp
                               <DollarSign size={14} color="#6b7280" />
                               <Text style={styles.detailText}>${(group.total_expenses || 0).toFixed(2)} total</Text>
                             </View>
-                          </View>
-                          
-                          {/* Group Actions */}
-                          <View style={styles.groupActions}>
-                            <TouchableOpacity 
-                              style={styles.addMemberButton}
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                handleInviteMember(group.id);
-                              }}
-                            >
-                              <Plus size={12} color="#3b82f6" />
-                            </TouchableOpacity>
                           </View>
                         </View>
                       </View>
@@ -258,14 +238,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
-  createButton: { backgroundColor: '#3b82f6', borderRadius: 24 },
-  createButtonContent: { width: 36, height: 36 },
+  fab: { position: 'absolute', bottom: 100, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#3b82f6', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, elevation: 8, zIndex: 10 },
   searchSection: { paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f9fafb', borderRadius: 8 },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 16, color: '#1f2937' },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 24, paddingVertical: 16, paddingBottom: 100 },
+  scrollContent: { paddingHorizontal: 24, paddingVertical: 16, paddingBottom: 80 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   loadingText: { fontSize: 16, color: '#6b7280', marginTop: 16 },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
@@ -274,24 +253,22 @@ const styles = StyleSheet.create({
   actionsSection: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937', marginBottom: 16 },
   actionButtons: { flexDirection: 'row', gap: 12 },
-  actionButton: { flex: 1, alignItems: 'center', paddingVertical: 16, backgroundColor: '#fff', borderRadius: 8, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  actionButton: { flex: 1, alignItems: 'center', paddingVertical: 20, backgroundColor: '#fff', borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, borderWidth: 1, borderColor: '#e5e7eb' },
   actionIcon: { marginBottom: 8 },
   actionText: { fontSize: 14, color: '#3b82f6', fontWeight: '500' },
   groupsSection: { marginBottom: 24 },
-  groupsList: { gap: 12 },
-  groupCard: { elevation: 2, borderRadius: 8 },
-  groupContent: { padding: 16 },
+  groupsList: { gap: 16 },
+  groupCard: { elevation: 2, borderRadius: 12, backgroundColor: '#fff' },
+  groupContent: { padding: 20 },
   groupHeader: { flexDirection: 'row', alignItems: 'flex-start' },
   groupAvatar: { backgroundColor: '#3b82f6', marginRight: 12 },
   groupInfo: { flex: 1 },
   groupMain: { marginBottom: 8 },
   groupName: { fontSize: 16, fontWeight: '600', color: '#1f2937', marginBottom: 2 },
   groupDescription: { fontSize: 14, color: '#6b7280' },
-  groupDetails: { flexDirection: 'row', gap: 16, marginBottom: 12 },
+  groupDetails: { flexDirection: 'row', gap: 16, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb' },
   detailItem: { flexDirection: 'row', alignItems: 'center' },
   detailText: { fontSize: 14, color: '#6b7280', marginLeft: 4 },
-  groupActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  addMemberButton: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#dbeafe', alignItems: 'center', justifyContent: 'center' },
   emptyState: { alignItems: 'center', paddingVertical: 48 },
   emptyIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937', marginBottom: 8 },

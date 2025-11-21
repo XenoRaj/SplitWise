@@ -8,4 +8,5 @@ urlpatterns = [
     path('<int:pk>/', views.GroupDetailView.as_view(), name='group_detail'),
     path('<int:group_id>/members/', views.add_member_to_group, name='add_member'),
     path('<int:group_id>/members/<int:user_id>/', views.remove_member_from_group, name='remove_member'),
+    path('<int:group_id>/settlements/summary/', views.group_settlement_summary, name='group_settlement_summary'),
 ]

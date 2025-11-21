@@ -58,7 +58,11 @@ type RootStackParamList = {
   'verification-completed': { categoryType: string; expenses: GroupExpense[]; group: Group };
   'verification-rejected': { categoryType: string; expenses: GroupExpense[]; group: Group };
   'verification-pending': { categoryType: string; expenses: GroupExpense[]; group: Group };
-  'settle-payment': undefined;
+  'settle-payment': { 
+    settlementType: 'individual' | 'group';
+    expenseId?: number;
+    groupId?: number;
+  };
   // Add other screens...
 };
 
@@ -419,7 +423,10 @@ export function GroupDetailsScreen({ navigation, route, user }: GroupDetailsScre
             </Button>
             <Button
               mode="outlined"
-              onPress={() => navigation.navigate('settle-payment')}
+              onPress={() => navigation.navigate('settle-payment', {
+                settlementType: 'group',
+                groupId: group.id
+              })}
               style={styles.actionButton}
               contentStyle={styles.actionButtonContent}
               icon={() => <DollarSign size={20} color="#3b82f6" />}

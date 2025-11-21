@@ -3,9 +3,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from collections import defaultdict
+from decimal import Decimal
 from .models import Group, GroupMembership
 from .serializers import GroupSerializer, GroupCreateSerializer, AddMemberSerializer
 from apps.users.models import CustomUser
+from apps.expenses.models import Expense, ExpenseSplit
 
 
 class GroupListCreateView(generics.ListCreateAPIView):
@@ -121,3 +125,63 @@ def remove_member_from_group(request, group_id, user_id):
     membership.save()
     
     return Response({'message': 'Member removed from group successfully'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def group_settlement_summary(request, group_id):
+    """Get settlement summary for a specific group"""
+    user = request.user
+    
+    # Verify user is member of this group
+    group = get_object_or_404(Group, id=group_id)
+    membership = GroupMembership.objects.filter(
+        group=group, user=user, is_active=True
+    ).first()
+    
+    if not membership:
+        return Response(
+            {'error': 'You are not a member of this group'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Get all expenses in this group
+    expenses = Expense.objects.filter(group_id=group_id)
+    
+    # Calculate balances from expense splits
+    balances = defaultdict(Decimal)
+    
+    for expense in expenses:
+        splits = expense.expense_splits.all()
+        
+        for split in splits:
+            if split.user == user:
+                if expense.paid_by != user:
+                    # Current user owes money to the person who paid
+                    balances[expense.paid_by.id] += split.amount
+                else:
+                    # Current user paid, others in this expense owe them
+                    other_splits = splits.exclude(user=user)
+                    for other_split in other_splits:
+                        balances[other_split.user.id] -= other_split.amount
+    
+    # Convert to list format with user details
+    summary = []
+    for user_id, amount in balances.items():
+        if amount != 0:  # Only include non-zero balances
+            other_user = CustomUser.objects.get(id=user_id)
+            summary.append({
+                'user_id': user_id,
+                'name': other_user.get_full_name() or other_user.username,
+                'email': other_user.email,
+                'balance': float(amount),
+                'type': 'owes_to_them' if amount > 0 else 'owes_to_you',
+                'amount': float(abs(amount))
+            })
+    
+    return Response({
+        'summary': summary,
+        'group_id': group_id,
+        'total_owed_by_you': sum(float(amt) for amt in balances.values() if amt > 0),
+        'total_owed_to_you': sum(float(abs(amt)) for amt in balances.values() if amt < 0)
+    })

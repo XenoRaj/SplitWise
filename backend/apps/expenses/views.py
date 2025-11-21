@@ -492,13 +492,15 @@ def settlement_summary(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def process_payment(request):
-    """Process a payment (dummy implementation)"""
+    """Process a payment with net settlement calculation for global settlements"""
     
     # Extract payment data
     receiver_id = request.data.get('receiver_id')
     amount = request.data.get('amount')
     payment_method = request.data.get('payment_method')
     note = request.data.get('note', '')
+    expense_id = request.data.get('expense_id')  # Optional: specific expense to settle
+    settlement_type = request.data.get('settlement_type', 'individual')  # 'individual', 'group', or 'global'
     
     if not all([receiver_id, amount, payment_method]):
         return Response({
@@ -515,6 +517,36 @@ def process_payment(request):
         # Get receiver user
         from apps.users.models import CustomUser
         receiver = CustomUser.objects.get(id=receiver_id)
+        
+        # For global settlements, calculate net balance between the two users
+        actual_amount = amount
+        if settlement_type == 'global':
+            # Calculate net balance: what current user owes to receiver
+            user_splits = ExpenseSplit.objects.filter(
+                user=request.user
+            ).select_related('expense')
+            
+            balance_with_receiver = Decimal('0')
+            
+            for split in user_splits:
+                expense = split.expense
+                if expense.paid_by == receiver:
+                    # User owes money to receiver
+                    balance_with_receiver += split.amount
+                elif expense.paid_by == request.user:
+                    # Receiver owes money to user
+                    balance_with_receiver -= split.amount
+            
+            # Use net balance as actual amount (but respect original request amount)
+            actual_amount = abs(balance_with_receiver)
+            
+            # The amount requested should be the net balance
+            if balance_with_receiver > 0:
+                # User owes receiver
+                actual_amount = balance_with_receiver
+            elif balance_with_receiver < 0:
+                # Receiver owes user - this is reversed direction, but we'll still process
+                actual_amount = abs(balance_with_receiver)
         
         # Simulate payment processing delay
         import time
@@ -547,12 +579,34 @@ def process_payment(request):
             
             # For now, let's update the expense splits to reflect the payment
             # Find expenses where current user owes money to the receiver
-            user_splits = ExpenseSplit.objects.filter(
-                user=request.user,
-                expense__paid_by=receiver
-            ).select_related('expense')
+            if expense_id:
+                # Settle specific expense only
+                user_splits = ExpenseSplit.objects.filter(
+                    user=request.user,
+                    expense__paid_by=receiver,
+                    expense_id=expense_id
+                ).select_related('expense')
+            elif settlement_type == 'global':
+                # For global settlement, get all splits involving both users
+                # This includes splits where user owes AND where receiver owes
+                user_splits = ExpenseSplit.objects.filter(
+                    user=request.user,
+                    expense__paid_by=receiver
+                ).select_related('expense')
+                
+                # Also mark splits where receiver owes (they are debtor, not payer)
+                receiver_splits = ExpenseSplit.objects.filter(
+                    user=receiver,
+                    expense__paid_by=request.user
+                ).select_related('expense')
+            else:
+                # Settle any/all expenses (original behavior for general settlements)
+                user_splits = ExpenseSplit.objects.filter(
+                    user=request.user,
+                    expense__paid_by=receiver
+                ).select_related('expense')
             
-            remaining_amount = amount
+            remaining_amount = actual_amount if settlement_type == 'global' else amount
             payments_made = []
             
             # Actually update the database - reduce split amounts
@@ -563,7 +617,7 @@ def process_payment(request):
                 # Calculate how much of this split we can pay
                 split_amount = min(remaining_amount, split.amount)
                 
-                # Update the split amount in database
+                # Update the split amount in database (mark as paid/settled)
                 split.amount -= split_amount
                 split.save()
                 
@@ -582,18 +636,49 @@ def process_payment(request):
                 # If split is fully paid, it will now show 0 in future settlements
                 print(f"Updated split for expense {split.expense.title}: paid {split_amount}, remaining {split.amount}")
             
+            # For global settlements, also mark receiver's debts (where they owe us)
+            if settlement_type == 'global':
+                receiver_splits_list = ExpenseSplit.objects.filter(
+                    user=receiver,
+                    expense__paid_by=request.user
+                ).select_related('expense')
+                
+                for split in receiver_splits_list:
+                    if remaining_amount <= 0:
+                        break
+                    
+                    # Calculate how much of this split we can credit
+                    split_amount = min(remaining_amount, split.amount)
+                    
+                    # Mark receiver's debt as settled
+                    split.amount -= split_amount
+                    split.save()
+                    
+                    payments_made.append({
+                        'expense_id': split.expense.id,
+                        'expense_title': split.expense.title,
+                        'original_amount': float(split.amount + split_amount),
+                        'amount_credited': float(split_amount),  # They owed us, so it's credited
+                        'remaining_amount': float(split.amount)
+                    })
+                    
+                    remaining_amount -= split_amount
+                    print(f"Credited split for expense {split.expense.title}: credited {split_amount}, remaining {split.amount}")
+            
             return Response({
                 'success': True,
                 'transaction_id': transaction_id,
-                'amount': float(amount),
+                'requested_amount': float(amount),
+                'actual_amount': float(actual_amount),
                 'receiver': receiver.get_full_name(),
                 'payment_method': payment_method,
                 'processing_time': int(processing_time * 1000),  # Convert to milliseconds
                 'processed_at': datetime.now().isoformat(),
                 'status': 'completed',
+                'settlement_type': settlement_type,
                 'payments_made': payments_made,
                 'note': note,
-                'message': f'Payment of ₹{amount} sent successfully to {receiver.get_full_name()} via {payment_method.title()}'
+                'message': f'Payment of ₹{actual_amount} sent successfully to {receiver.get_full_name()} via {payment_method.title()}'
             })
         else:
             # Simulate payment failure

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
-import { Button, TextInput, Card, Searchbar, Checkbox, Avatar, Chip } from 'react-native-paper';
+import { Button, TextInput, Card, Searchbar, Avatar, Chip } from 'react-native-paper';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
-import { ArrowLeft, Users, Search, UserPlus } from 'lucide-react-native';
+import { ArrowLeft, Users, Search, UserPlus, CheckCircle, Circle } from 'lucide-react-native';
 import { apiService } from '../services/api';
 
 type RootStackParamList = {
@@ -315,10 +315,13 @@ export function CreateGroupScreen({ navigation }: CreateGroupScreenProps) {
                         <Text style={styles.userEmail}>{user.email}</Text>
                       </View>
                     </View>
-                    <Checkbox
-                      status={selectedMembers.has(user.id) ? 'checked' : 'unchecked'}
-                      onPress={() => toggleMemberSelection(user.id)}
-                    />
+                    <View style={styles.checkboxContainer}>
+                      {selectedMembers.has(user.id) ? (
+                        <CheckCircle size={24} color="#3b82f6" strokeWidth={2} />
+                      ) : (
+                        <Circle size={24} color="#d1d5db" strokeWidth={2} />
+                      )}
+                    </View>
                   </TouchableOpacity>
                 ))
               )}
@@ -534,6 +537,13 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 14,
     color: '#6b7280',
+  },
+  checkboxContainer: { 
+    width: 50, 
+    height: 50, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    paddingLeft: 8
   },
   buttonContainer: {
     gap: 12,

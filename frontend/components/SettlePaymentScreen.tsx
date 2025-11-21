@@ -9,9 +9,11 @@ import { authStorage } from '../services/authStorage';
 
 type RootStackParamList = {
   'settle-payment': { 
-    settlementType: 'individual' | 'group';
+    settlementType: 'individual' | 'group' | 'global';
     expenseId?: number;
     groupId?: number;
+    recipientId?: number;
+    amount?: number;
   };
   dashboard: undefined;
   success: { message: string };
@@ -20,6 +22,26 @@ type RootStackParamList = {
 
 type SettlePaymentScreenNavigationProp = StackNavigationProp<RootStackParamList, 'settle-payment'>;
 type SettlePaymentScreenRouteProp = RouteProp<RootStackParamList, 'settle-payment'>;
+
+interface PaymentResult {
+  transaction_id: string;
+  processing_time: number;
+  status: string;
+}
+
+interface Recipient {
+  user_id: number;
+  name: string;
+  email?: string;
+  balance: number;
+  type: string;
+  actionType: 'collect' | 'pay';
+}
+
+interface ExpenseSplit {
+  user: { id: number; name?: string; username?: string; email: string };
+  amount: string | number;
+}
 
 interface SettlePaymentScreenProps {
   navigation: SettlePaymentScreenNavigationProp;
@@ -49,9 +71,9 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
     }
   };
   const [step, setStep] = useState(1); // 1: Details, 2: Payment Method, 3: Confirmation, 4: Processing, 5: Success
-  const [recipients, setRecipients] = useState([]);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(false);
-  const [paymentResult, setPaymentResult] = useState(null);
+  const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
 
   const paymentMethods = [
     { id: 'cash', name: 'Cash', icon: '💵' },
@@ -66,7 +88,40 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
   const fetchSettlementData = async () => {
     setLoading(true);
     
-    if (settlementType === 'individual' && expenseId) {
+    if (settlementType === 'global' && route.params?.recipientId) {
+      // For global settlement from GlobalSettleUpScreen, we have the recipient pre-selected
+      const recipientId = route.params.recipientId;
+      const amount = route.params.amount;
+      
+      // Fetch the recipient's details from settlement summary
+      const result = await apiService.getSettlementSummary();
+      setLoading(false);
+      
+      if (result.success) {
+        const recipient = result.data.summary.find((item: Recipient) => item.user_id === recipientId);
+        if (recipient) {
+          // Map backend field names to our expected format
+          const mappedRecipient: Recipient = {
+            user_id: recipient.user_id,
+            name: recipient.user_name,
+            email: recipient.user_email,
+            balance: recipient.amount,
+            type: recipient.type,
+            actionType: recipient.type === 'owes_to_you' ? 'collect' : 'pay'
+          };
+          setRecipients([mappedRecipient]);
+          // Auto-select the recipient
+          updatePaymentData('recipient', recipientId.toString());
+          if (amount) {
+            updatePaymentData('amount', amount.toString());
+          }
+        } else {
+          Alert.alert('Error', 'Recipient not found');
+        }
+      } else {
+        Alert.alert('Error', result.error);
+      }
+    } else if (settlementType === 'individual' && expenseId) {
       // For individual expense settlement, fetch specific expense details
       const result = await apiService.getExpenseDetails(expenseId);
       setLoading(false);
@@ -84,7 +139,7 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
         if (creator && creator.id !== currentUserId) {
           // Current user owes money to the expense creator
           // Find current user's split to get the exact amount they owe
-          const currentUserSplit = expense.expense_splits?.find(split => 
+          const currentUserSplit = expense.expense_splits?.find((split: ExpenseSplit) => 
             split.user.id === currentUserId
           );
           const amountOwed = currentUserSplit ? 
@@ -101,12 +156,12 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
         } else {
           // Current user is the creator - others owe money to current user
           // Use the actual expense splits data to show who owes what
-          const splitMembers = expense.expense_splits?.filter(split => 
+          const splitMembers = expense.expense_splits?.filter((split: ExpenseSplit) => 
             split.user.id !== currentUserId // Don't show current user
-          ).map(split => ({
+          ).map((split: ExpenseSplit) => ({
             user_id: split.user.id,
             name: split.user.name || split.user.username || split.user.email,
-            balance: parseFloat(split.amount || 0),
+            balance: parseFloat(String(split.amount) || '0'),
             type: 'owes_to_you', // They owe money to current user
             actionType: 'collect' // Current user is collecting money
           })) || [];
@@ -117,13 +172,22 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
         Alert.alert('Error', result.error);
       }
     } else if (settlementType === 'group' && groupId) {
-      // For group settlement, get all group members you owe money to
+      // For group settlement, get all group members and their balances
       const result = await apiService.getGroupSettlementSummary(groupId);
       setLoading(false);
       
       if (result.success) {
-        const owesTo = result.data.summary.filter(item => item.type === 'owes_to_them');
-        setRecipients(owesTo);
+        console.log('Group settlement summary response:', result.data);
+        const recipients = result.data.summary.map((item: Recipient) => ({
+          user_id: item.user_id,
+          name: item.name,
+          email: item.email,
+          balance: item.balance,
+          type: item.type,
+          actionType: item.type === 'owes_to_you' ? 'collect' : 'pay'
+        }));
+        console.log('Processed recipients:', recipients);
+        setRecipients(recipients);
       } else {
         Alert.alert('Error', result.error);
       }
@@ -136,13 +200,13 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
         // Show people who owe YOU money (for collection)
         // AND people you owe money to (for payment)
         // But since this is a "settle payment" screen, prioritize collections
-        const owesToYou = result.data.summary.filter(item => item.type === 'owes_to_you');
-        const youOweTo = result.data.summary.filter(item => item.type === 'owes_to_them');
+        const owesToYou = result.data.summary.filter((item: Recipient) => item.type === 'owes_to_you');
+        const youOweTo = result.data.summary.filter((item: Recipient) => item.type === 'owes_to_them');
         
         // Show collections first (people who owe you), then payments (people you owe)
-        const allRecipients = [
-          ...owesToYou.map(item => ({ ...item, actionType: 'collect' })),
-          ...youOweTo.map(item => ({ ...item, actionType: 'pay' }))
+        const allRecipients: Recipient[] = [
+          ...owesToYou.map((item: Recipient) => ({ ...item, actionType: 'collect' as const })),
+          ...youOweTo.map((item: Recipient) => ({ ...item, actionType: 'pay' as const }))
         ];
         
         setRecipients(allRecipients);
@@ -169,10 +233,14 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
       receiver_id: parseInt(paymentData.recipient),
       amount: parseFloat(paymentData.amount),
       payment_method: paymentData.paymentMethod,
-      note: paymentData.note || ''
+      note: paymentData.note || '',
+      settlement_type: settlementType,  // Pass settlement type to backend
+      // Include expense_id if this is an individual expense settlement
+      ...(settlementType === 'individual' && expenseId ? { expense_id: expenseId } : {})
     };
     
     console.log('Processing payment with data:', paymentRequest);
+    console.log('Settlement type:', settlementType, 'Expense ID:', expenseId);
     console.log('Selected recipient:', selectedRecipient);
     
     // Validate required fields
@@ -269,7 +337,7 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
     </View>
   );
 
-  const selectedRecipient = recipients.find(r => r.id === paymentData.recipient);
+  const selectedRecipient = recipients.find(r => r.user_id.toString() === paymentData.recipient);
 
   return (
     <View style={styles.container}>
@@ -314,7 +382,7 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
                     <Text style={styles.loadingText}>Loading recipients...</Text>
                   ) : (
                     <View style={styles.recipientsList}>
-                      {recipients.map((recipient) => (
+                      {recipients.filter(r => r.balance !== 0).map((recipient) => (
                         <TouchableOpacity
                           key={recipient.user_id}
                           style={[
@@ -342,7 +410,7 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
                         </TouchableOpacity>
                       ))}
                       
-                      {recipients.length === 0 && !loading && (
+                      {recipients.filter(r => r.balance !== 0).length === 0 && !loading && (
                         <Text style={styles.noRecipientsText}>
                           {settlementType === 'individual' 
                             ? 'No one to pay for this expense' 
@@ -350,7 +418,7 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
                         </Text>
                       )}
                       
-                      {recipients.length > 0 && !loading && 
+                      {recipients.filter(r => r.balance !== 0).length > 0 && !loading && 
                        recipients.every(r => r.actionType === 'collect' || r.type === 'owes_to_you') && (
                         <View style={styles.noPaymentsNeeded}>
                           <CheckCircle size={48} color="#16a34a" />
@@ -530,7 +598,7 @@ export function SettlePaymentScreen({ navigation, route, showLoading }: SettlePa
       </ScrollView>
 
       {/* Footer - Hide during processing, success, and when only collections available */}
-      {step < 4 && recipients.some(r => r.actionType === 'pay' || r.type === 'owes_to_them') && (
+      {step < 4 && recipients.filter(r => r.balance !== 0).some(r => r.actionType === 'pay' || r.type === 'owes_to_them') && (
         <View style={styles.footer}>
           <Button 
             mode="contained"
