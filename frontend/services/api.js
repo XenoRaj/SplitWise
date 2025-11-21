@@ -2,11 +2,9 @@ import axios from 'axios';
 import { authStorage } from './authStorage';
 
 // Base URL for Django backend
-// Configure in .env file: API_BASE_URL=http://your-server-ip:8000/api
-// Current IP for this machine: 192.168.2.246
-// const BASE_URL = process.env.API_BASE_URL || 'http://192.168.2.246:8000/api';
-
-const BASE_URL = process.env.API_BASE_URL || 'http://10.0.2.2:8000/api';
+// For your own machine: use 'http://10.0.2.2:8000/api' 
+// For friend's machine: use 'http://YOUR_IP_ADDRESS:8000/api'
+const BASE_URL =  'http://192.168.2.246:8000/api';
 
 // Create axios instance
 const api = axios.create({
